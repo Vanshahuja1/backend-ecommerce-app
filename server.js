@@ -978,7 +978,54 @@ app.post('/api/create-admin', async (req, res) => {
     });
   }
 });
+// Toggle User Status (Activate/Deactivate) - For admin
+app.patch('/api/admin/users/:id/status', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { isActive } = req.body;
 
+    // Prevent admin from changing their own status or other admins
+    const user = await User.findOne({ _id: userId, userType: { $ne: 'admin' } });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found or you cannot modify admin status'
+      });
+    }
+
+    user.isActive = isActive;
+    user.updatedAt = new Date();
+    await user.save();
+
+    // If user is a seller, also update their items' isAvailable status
+    if (user.userType === 'seller') {
+      await Item.updateMany(
+        { sellerId: userId },
+        { isAvailable: !!isActive, updatedAt: new Date() }
+      );
+    }
+
+    res.json({
+      success: true,
+      message: `User ${isActive ? 'activated' : 'deactivated'} successfully`,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        isActive: user.isActive,
+        userType: user.userType
+      }
+    });
+
+  } catch (error) {
+    console.error('Toggle user status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update user status'
+    });
+  }
+});
 // =============================================================================
 // EXISTING ROUTES (Updated for new seller flow)
 // =============================================================================
