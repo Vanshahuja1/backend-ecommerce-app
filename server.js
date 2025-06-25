@@ -865,7 +865,41 @@ app.patch('/api/admin/sellers/:id/status', authenticateToken, requireAdmin, asyn
     });
   }
 });
+// Admin: Toggle Item Availability
+app.patch('/api/admin/items/:id/status', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const itemId = req.params.id;
+    const { isAvailable } = req.body;
 
+    const item = await Item.findById(itemId);
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: 'Item not found'
+      });
+    }
+
+    item.isAvailable = !!isAvailable;
+    item.updatedAt = new Date();
+    await item.save();
+
+    res.json({
+      success: true,
+      message: `Item ${isAvailable ? 'activated (visible)' : 'deactivated (hidden)'} successfully`,
+      item: {
+        id: item._id,
+        name: item.name,
+        isAvailable: item.isAvailable
+      }
+    });
+  } catch (error) {
+    console.error('Admin toggle item status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update item status'
+    });
+  }
+});
 // Get All Users (for admin)
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
