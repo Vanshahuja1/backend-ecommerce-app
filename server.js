@@ -204,6 +204,7 @@ async function sendSignupMail({ name, email, phone }) {
 }
 
 // Register User (UPDATED)
+// Register User (With OTP verification)
 app.post('/api/auth/signup', async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
@@ -223,47 +224,56 @@ app.post('/api/auth/signup', async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create new user
+    // Create new user (not verified yet)
     const user = new User({
       name,
       email,
       phone,
       password: hashedPassword,
-      userType: 'buyer'
+      userType: 'buyer',
+      isVerified: false
     });
 
     await user.save();
 
-    // Send welcome mail with user details
-    try {
-      await sendSignupMail({ name, email, phone });
-    } catch (mailErr) {
-      console.error('Signup email send error:', mailErr);
-    }
+    // Generate OTP
+    const otp = generateOTP();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15);
+    await OTP.deleteMany({ email });
+    const otpDoc = new OTP({
+      email,
+      otp,
+      expiresAt
+    });
+    await otpDoc.save();
 
-    // Generate JWT token
-    const token = jwt.sign(
-      { id: user._id, email: user.email },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '7d' }
-    );
-
-    // Return user data without password
-    const userData = {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      userType: user.userType,
-      profileImage: user.profileImage,
-      createdAt: user.createdAt
+    // Send OTP mail (reuse your nodemailer transporter)
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Signup OTP Verification',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
+          <h2 style="color: #333; text-align: center;">OTP Verification</h2>
+          <p>Hello ${name},</p>
+          <p>Your OTP for verifying your account is:</p>
+          <div style="background-color: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
+            ${otp}
+          </div>
+          <p>This OTP will expire in 15 minutes.</p>
+          <p>If you did not sign up, please ignore this email.</p>
+          <p style="margin-top: 30px; font-size: 12px; color: #777; text-align: center;">
+            This is an automated email. Please do not reply.
+          </p>
+        </div>
+      `,
     };
+    await transporter.sendMail(mailOptions);
 
     res.status(201).json({
       success: true,
-      message: 'Account created successfully!',
-      user: userData,
-      token
+      message: 'Account created! Please verify your email with the OTP sent.'
     });
 
   } catch (error) {
@@ -275,6 +285,75 @@ app.post('/api/auth/signup', async (req, res) => {
   }
 });
 
+// Verify Signup OTP
+app.post('/api/auth/verify-otp', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email and OTP are required' 
+      });
+    }
+    const otpDoc = await OTP.findOne({ email, otp });
+    if (!otpDoc) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid OTP'
+      });
+    }
+    if (new Date() > otpDoc.expiresAt) {
+      await OTP.deleteOne({ _id: otpDoc._id });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'OTP has expired' 
+      });
+    }
+    // Set user as verified
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found'
+      });
+    }
+    user.isVerified = true;
+    user.updatedAt = new Date();
+    await user.save();
+    await OTP.deleteOne({ _id: otpDoc._id });
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user._id, email: user.email },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '7d' }
+    );
+    const userData = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      userType: user.userType,
+      profileImage: user.profileImage,
+      createdAt: user.createdAt,
+      isVerified: user.isVerified
+    };
+
+    res.json({
+      success: true,
+      message: 'Email verified successfully!',
+      user: userData,
+      token
+    });
+
+  } catch (error) {
+    console.error('Verify signup otp error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'An error occurred while verifying OTP' 
+    });
+  }
+});
 // ========== (rest of your routes remain unchanged) ==========
 
 // Send OTP for password reset
