@@ -5,7 +5,8 @@ const bcrypt = require("bcryptjs")
 const jwt = require("jsonwebtoken")
 const nodemailer = require("nodemailer")
 const crypto = require("crypto")
-const Razorpay = require('razorpay'); // Commented for development
+const Razorpay = require('razorpay'); // Uncommented
+
 require("dotenv").config()
 
 const app = express()
@@ -14,13 +15,11 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
-// Initialize Razorpay - Commented for development
-
+// Initialize Razorpay - Uncommented
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
-
 
 // MongoDB Connection
 mongoose.connect(
@@ -31,6 +30,7 @@ mongoose.connect(
     useUnifiedTopology: true,
   },
 )
+
 mongoose.connection.on("connected", () => {
   console.log("MongoDB connected successfully")
 })
@@ -192,15 +192,13 @@ const transporter = nodemailer.createTransport({
   },
 })
 
-// JWT Middleware
+// JWT Middleware - Defined inline
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"]
   const token = authHeader && authHeader.split(" ")[1]
-
   if (!token) {
     return res.status(401).json({ success: false, message: "Access token required" })
   }
-
   jwt.verify(token, process.env.JWT_SECRET || "your-secret-key", (err, user) => {
     if (err) {
       return res.status(403).json({ success: false, message: "Invalid token" })
@@ -275,7 +273,6 @@ async function sendSignupMail({ name, email, phone }) {
 // Send order confirmation email
 async function sendOrderConfirmationEmail(user, order) {
   const itemsList = order.items.map((item) => `<li>${item.name} - Qty: ${item.quantity} - ₹${item.price}</li>`).join("")
-
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: user.email,
@@ -285,8 +282,7 @@ async function sendOrderConfirmationEmail(user, order) {
         <h2 style="color: #4CAF50; text-align: center;">Order Confirmed!</h2>
         <p>Hello ${user.name},</p>
         <p>Thank you for your order. Here are the details:</p>
-        
-        <div style="background-color: #f5f5f5; padding: 15px; margin: 20px 0; border-radius: 5px;">
+                <div style="background-color: #f5f5f5; padding: 15px; margin: 20px 0; border-radius: 5px;">
           <h3>Order Details</h3>
           <p><strong>Order ID:</strong> ${order.orderId}</p>
           <p><strong>Total Amount:</strong> ₹${order.totalAmount}</p>
@@ -294,12 +290,10 @@ async function sendOrderConfirmationEmail(user, order) {
           <p><strong>Payment Status:</strong> ${order.paymentStatus}</p>
           <p><strong>Estimated Delivery:</strong> ${order.estimatedDelivery.toDateString()}</p>
         </div>
-
         <div style="background-color: #f9f9f9; padding: 15px; margin: 20px 0; border-radius: 5px;">
           <h3>Items Ordered</h3>
           <ul>${itemsList}</ul>
         </div>
-
         <div style="background-color: #f0f8ff; padding: 15px; margin: 20px 0; border-radius: 5px;">
           <h3>Delivery Address</h3>
           <p>${order.address.name}<br>
@@ -307,17 +301,14 @@ async function sendOrderConfirmationEmail(user, order) {
           ${order.address.address}<br>
           ${order.address.city}, ${order.address.state} - ${order.address.pincode}</p>
         </div>
-
         <p>We'll keep you updated on your order status.</p>
         <p>Thank you for shopping with us!</p>
-        
-        <p style="margin-top: 30px; font-size: 12px; color: #777; text-align: center;">
+                <p style="margin-top: 30px; font-size: 12px; color: #777; text-align: center;">
           This is an automated email. Please do not reply.
         </p>
       </div>
     `,
   }
-
   await transporter.sendMail(mailOptions)
 }
 
@@ -329,7 +320,6 @@ async function sendOrderConfirmationEmail(user, order) {
 app.get("/api/cart/:userId", authenticateToken, async (req, res) => {
   try {
     const userId = req.params.userId
-
     // Verify user can only access their own cart
     if (req.user.id !== userId) {
       return res.status(403).json({
@@ -337,9 +327,7 @@ app.get("/api/cart/:userId", authenticateToken, async (req, res) => {
         message: "Access denied",
       })
     }
-
     const cart = await Cart.findOne({ userId })
-
     if (!cart) {
       return res.json({
         success: true,
@@ -348,11 +336,9 @@ app.get("/api/cart/:userId", authenticateToken, async (req, res) => {
         totalPrice: 0,
       })
     }
-
     // Calculate totals
     const totalItems = cart.items.reduce((sum, item) => sum + item.quantity, 0)
     const totalPrice = cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
-
     res.json({
       success: true,
       cartItems: cart.items.map((item) => ({
@@ -382,7 +368,6 @@ app.get("/api/cart/:userId", authenticateToken, async (req, res) => {
 app.post("/api/cart/add", authenticateToken, async (req, res) => {
   try {
     const { userId, productId, name, price, imageUrl, category, unit, quantity = 1 } = req.body
-
     // Verify user can only modify their own cart
     if (req.user.id !== userId) {
       return res.status(403).json({
@@ -390,7 +375,6 @@ app.post("/api/cart/add", authenticateToken, async (req, res) => {
         message: "Access denied",
       })
     }
-
     // Validate required fields
     if (!productId || !name || !price || !unit) {
       return res.status(400).json({
@@ -398,20 +382,16 @@ app.post("/api/cart/add", authenticateToken, async (req, res) => {
         message: "Product ID, name, price, and unit are required",
       })
     }
-
     // Find or create cart for user
     let cart = await Cart.findOne({ userId })
-
     if (!cart) {
       cart = new Cart({
         userId,
         items: [],
       })
     }
-
     // Check if item already exists in cart
     const existingItemIndex = cart.items.findIndex((item) => item.productId === productId)
-
     if (existingItemIndex > -1) {
       // Update quantity if item exists
       cart.items[existingItemIndex].quantity += quantity
@@ -429,10 +409,8 @@ app.post("/api/cart/add", authenticateToken, async (req, res) => {
         addedAt: new Date(),
       })
     }
-
     cart.updatedAt = new Date()
     await cart.save()
-
     res.json({
       success: true,
       message: "Item added to cart successfully",
@@ -451,7 +429,6 @@ app.post("/api/cart/add", authenticateToken, async (req, res) => {
 app.delete("/api/cart/remove", authenticateToken, async (req, res) => {
   try {
     const { userId, productId } = req.body
-
     // Verify user can only modify their own cart
     if (req.user.id !== userId) {
       return res.status(403).json({
@@ -459,36 +436,29 @@ app.delete("/api/cart/remove", authenticateToken, async (req, res) => {
         message: "Access denied",
       })
     }
-
     const cart = await Cart.findOne({ userId })
-
     if (!cart) {
       return res.status(404).json({
         success: false,
         message: "Cart not found",
       })
     }
-
     // Find and remove the item
     const itemIndex = cart.items.findIndex((item) => item.productId === productId)
-
     if (itemIndex === -1) {
       return res.status(404).json({
         success: false,
         message: "Item not found in cart",
       })
     }
-
     cart.items.splice(itemIndex, 1)
     cart.updatedAt = new Date()
-
     // If cart is empty, you might want to delete the cart document
     if (cart.items.length === 0) {
       await Cart.deleteOne({ userId })
     } else {
       await cart.save()
     }
-
     res.json({
       success: true,
       message: "Item removed from cart successfully",
@@ -507,7 +477,6 @@ app.delete("/api/cart/remove", authenticateToken, async (req, res) => {
 app.put("/api/cart/update", authenticateToken, async (req, res) => {
   try {
     const { userId, productId, quantity } = req.body
-
     // Verify user can only modify their own cart
     if (req.user.id !== userId) {
       return res.status(403).json({
@@ -515,39 +484,31 @@ app.put("/api/cart/update", authenticateToken, async (req, res) => {
         message: "Access denied",
       })
     }
-
     if (!quantity || quantity < 1) {
       return res.status(400).json({
         success: false,
         message: "Quantity must be at least 1",
       })
     }
-
     const cart = await Cart.findOne({ userId })
-
     if (!cart) {
       return res.status(404).json({
         success: false,
         message: "Cart not found",
       })
     }
-
     // Find and update the item
     const itemIndex = cart.items.findIndex((item) => item.productId === productId)
-
     if (itemIndex === -1) {
       return res.status(404).json({
         success: false,
         message: "Item not found in cart",
       })
     }
-
     cart.items[itemIndex].quantity = Number.parseInt(quantity)
     cart.items[itemIndex].addedAt = new Date() // Update timestamp
     cart.updatedAt = new Date()
-
     await cart.save()
-
     res.json({
       success: true,
       message: "Cart updated successfully",
@@ -566,7 +527,6 @@ app.put("/api/cart/update", authenticateToken, async (req, res) => {
 app.delete("/api/cart/clear/:userId", authenticateToken, async (req, res) => {
   try {
     const userId = req.params.userId
-
     // Verify user can only modify their own cart
     if (req.user.id !== userId) {
       return res.status(403).json({
@@ -574,9 +534,7 @@ app.delete("/api/cart/clear/:userId", authenticateToken, async (req, res) => {
         message: "Access denied",
       })
     }
-
     await Cart.deleteOne({ userId })
-
     res.json({
       success: true,
       message: "Cart cleared successfully",
@@ -595,7 +553,6 @@ app.delete("/api/cart/clear/:userId", authenticateToken, async (req, res) => {
 app.get("/api/cart/:userId/count", authenticateToken, async (req, res) => {
   try {
     const userId = req.params.userId
-
     // Verify user can only access their own cart
     if (req.user.id !== userId) {
       return res.status(403).json({
@@ -603,10 +560,8 @@ app.get("/api/cart/:userId/count", authenticateToken, async (req, res) => {
         message: "Access denied",
       })
     }
-
     const cart = await Cart.findOne({ userId })
     const count = cart ? cart.items.reduce((sum, item) => sum + item.quantity, 0) : 0
-
     res.json({
       success: true,
       count,
@@ -628,7 +583,6 @@ app.get("/api/cart/:userId/count", authenticateToken, async (req, res) => {
 app.get("/api/addresses", authenticateToken, async (req, res) => {
   try {
     const addresses = await Address.find({ userId: req.user.id }).sort({ isDefault: -1, createdAt: -1 }).limit(3) // Limit to 3 addresses as per frontend
-
     res.json({
       success: true,
       addresses,
@@ -646,7 +600,6 @@ app.get("/api/addresses", authenticateToken, async (req, res) => {
 app.post("/api/addresses", authenticateToken, async (req, res) => {
   try {
     const { title, name, phone, address, city, state, pincode, isDefault } = req.body
-
     // Validate required fields
     if (!title || !name || !phone || !address || !city || !state || !pincode) {
       return res.status(400).json({
@@ -654,7 +607,6 @@ app.post("/api/addresses", authenticateToken, async (req, res) => {
         message: "All address fields are required",
       })
     }
-
     // Validate pincode
     if (pincode.length !== 6) {
       return res.status(400).json({
@@ -662,7 +614,6 @@ app.post("/api/addresses", authenticateToken, async (req, res) => {
         message: "Pincode must be 6 digits",
       })
     }
-
     // Validate phone
     if (phone.length < 10) {
       return res.status(400).json({
@@ -670,7 +621,6 @@ app.post("/api/addresses", authenticateToken, async (req, res) => {
         message: "Phone number must be at least 10 digits",
       })
     }
-
     // Check if user already has 3 addresses
     const existingAddresses = await Address.countDocuments({ userId: req.user.id })
     if (existingAddresses >= 3) {
@@ -679,15 +629,12 @@ app.post("/api/addresses", authenticateToken, async (req, res) => {
         message: "Maximum 3 addresses allowed per user",
       })
     }
-
     // If this is set as default, remove default from other addresses
     if (isDefault) {
       await Address.updateMany({ userId: req.user.id }, { isDefault: false })
     }
-
     // If this is the first address, make it default
     const shouldBeDefault = existingAddresses === 0 || isDefault
-
     const newAddress = new Address({
       userId: req.user.id,
       title,
@@ -699,9 +646,7 @@ app.post("/api/addresses", authenticateToken, async (req, res) => {
       pincode,
       isDefault: shouldBeDefault,
     })
-
     await newAddress.save()
-
     res.status(201).json({
       success: true,
       message: "Address added successfully",
@@ -721,24 +666,20 @@ app.put("/api/addresses/:id", authenticateToken, async (req, res) => {
   try {
     const addressId = req.params.id
     const { title, name, phone, address, city, state, pincode, isDefault } = req.body
-
     const existingAddress = await Address.findOne({
       _id: addressId,
       userId: req.user.id,
     })
-
     if (!existingAddress) {
       return res.status(404).json({
         success: false,
         message: "Address not found",
       })
     }
-
     // If setting as default, remove default from other addresses
     if (isDefault && !existingAddress.isDefault) {
       await Address.updateMany({ userId: req.user.id, _id: { $ne: addressId } }, { isDefault: false })
     }
-
     const updatedAddress = await Address.findByIdAndUpdate(
       addressId,
       {
@@ -754,7 +695,6 @@ app.put("/api/addresses/:id", authenticateToken, async (req, res) => {
       },
       { new: true },
     )
-
     res.json({
       success: true,
       message: "Address updated successfully",
@@ -773,19 +713,16 @@ app.put("/api/addresses/:id", authenticateToken, async (req, res) => {
 app.delete("/api/addresses/:id", authenticateToken, async (req, res) => {
   try {
     const addressId = req.params.id
-
     const address = await Address.findOneAndDelete({
       _id: addressId,
       userId: req.user.id,
     })
-
     if (!address) {
       return res.status(404).json({
         success: false,
         message: "Address not found",
       })
     }
-
     // If deleted address was default, make another address default
     if (address.isDefault) {
       const firstAddress = await Address.findOne({ userId: req.user.id })
@@ -794,7 +731,6 @@ app.delete("/api/addresses/:id", authenticateToken, async (req, res) => {
         await firstAddress.save()
       }
     }
-
     res.json({
       success: true,
       message: "Address deleted successfully",
@@ -819,22 +755,18 @@ app.put("/api/user/update-info", authenticateToken, async (req, res) => {
     if (!name && !phone) {
       return res.status(400).json({ success: false, message: "Nothing to update" })
     }
-
     if (phone) {
       const phoneExists = await User.findOne({ phone, _id: { $ne: req.user.id } })
       if (phoneExists) {
         return res.status(400).json({ success: false, message: "Phone number already exists." })
       }
     }
-
     const user = await User.findById(req.user.id)
     if (!user) return res.status(404).json({ success: false, message: "User not found" })
-
     if (name) user.name = name
     if (phone) user.phone = phone
     user.updatedAt = new Date()
     await user.save()
-
     res.json({
       success: true,
       message: "User information updated successfully",
@@ -856,20 +788,16 @@ app.put("/api/user/update-info", authenticateToken, async (req, res) => {
 app.post("/api/auth/signup", async (req, res) => {
   try {
     const { name, email, phone, password } = req.body
-
     const existingUser = await User.findOne({
       $or: [{ email }, { phone }],
     })
-
     if (existingUser) {
       return res.status(400).json({
         success: false,
         message: "User already exists with this email or phone number.",
       })
     }
-
     const hashedPassword = await bcrypt.hash(password, 10)
-
     const user = new User({
       name,
       email,
@@ -878,9 +806,7 @@ app.post("/api/auth/signup", async (req, res) => {
       userType: "buyer",
       isVerified: false,
     })
-
     await user.save()
-
     const otp = generateOTP()
     const expiresAt = new Date()
     expiresAt.setMinutes(expiresAt.getMinutes() + 15)
@@ -891,7 +817,6 @@ app.post("/api/auth/signup", async (req, res) => {
       expiresAt,
     })
     await otpDoc.save()
-
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
@@ -913,7 +838,6 @@ app.post("/api/auth/signup", async (req, res) => {
       `,
     }
     await transporter.sendMail(mailOptions)
-
     res.status(201).json({
       success: true,
       message: "Account created! Please verify your email with the OTP sent.",
@@ -951,7 +875,6 @@ app.post("/api/auth/verify-otp", async (req, res) => {
         message: "OTP has expired",
       })
     }
-
     const user = await User.findOne({ email })
     if (!user) {
       return res.status(404).json({
@@ -963,7 +886,6 @@ app.post("/api/auth/verify-otp", async (req, res) => {
     user.updatedAt = new Date()
     await user.save()
     await OTP.deleteOne({ _id: otpDoc._id })
-
     const token = jwt.sign({ id: user._id, email: user.email }, process.env.JWT_SECRET || "your-secret-key", {
       expiresIn: "7d",
     })
@@ -977,7 +899,6 @@ app.post("/api/auth/verify-otp", async (req, res) => {
       createdAt: user.createdAt,
       isVerified: user.isVerified,
     }
-
     res.json({
       success: true,
       message: "Email verified successfully!",
@@ -997,14 +918,12 @@ app.post("/api/auth/verify-otp", async (req, res) => {
 app.post("/api/forgot-password", async (req, res) => {
   try {
     const { email } = req.body
-
     if (!email) {
       return res.status(400).json({
         success: false,
         error: "Email is required",
       })
     }
-
     const user = await User.findOne({ email })
     if (!user) {
       return res.status(404).json({
@@ -1012,7 +931,6 @@ app.post("/api/forgot-password", async (req, res) => {
         error: "No user found with this email address",
       })
     }
-
     const otp = generateOTP()
     const expiresAt = new Date()
     expiresAt.setMinutes(expiresAt.getMinutes() + 15)
@@ -1242,7 +1160,6 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
 app.post("/api/auth/become-seller", authenticateToken, async (req, res) => {
   try {
     const { storeName, storeAddress, businessLicense } = req.body
-
     const user = await User.findById(req.user.id)
     if (!user) {
       return res.status(404).json({
@@ -1250,27 +1167,23 @@ app.post("/api/auth/become-seller", authenticateToken, async (req, res) => {
         message: "User not found",
       })
     }
-
     // Check if user already has a pending or approved request
     const existingRequest = await SellerRequest.findOne({
       userId: user._id,
       status: { $in: ["pending", "approved"] },
     })
-
     if (existingRequest) {
       return res.status(400).json({
         success: false,
         message: `You already have a ${existingRequest.status} seller request.`,
       })
     }
-
     if (user.userType === "seller") {
       return res.status(400).json({
         success: false,
         message: "You are already a seller.",
       })
     }
-
     // Create seller request
     const sellerRequest = new SellerRequest({
       userId: user._id,
@@ -1280,14 +1193,11 @@ app.post("/api/auth/become-seller", authenticateToken, async (req, res) => {
       storeAddress,
       businessLicense,
     })
-
     await sellerRequest.save()
-
     // Update user status
     user.sellerRequestStatus = "pending"
     user.updatedAt = new Date()
     await user.save()
-
     res.json({
       success: true,
       message: "Seller request submitted successfully! Please wait for admin approval.",
@@ -1320,14 +1230,12 @@ app.get("/api/admin/stats", authenticateToken, requireAdmin, async (req, res) =>
       userType: "seller",
       isActive: true,
     })
-
     const stats = {
       totalUsers,
       totalSellers,
       pendingRequests,
       activeSellers,
     }
-
     res.json({
       success: true,
       stats,
@@ -1345,21 +1253,17 @@ app.get("/api/admin/stats", authenticateToken, requireAdmin, async (req, res) =>
 app.get("/api/admin/seller-requests", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { status, page = 1, limit = 10 } = req.query
-
     const query = {}
     if (status) {
       query.status = status
     }
-
     const requests = await SellerRequest.find(query)
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit)
       .populate("userId", "name email phone")
       .populate("processedBy", "name email")
-
     const total = await SellerRequest.countDocuments(query)
-
     res.json({
       success: true,
       requests,
@@ -1381,7 +1285,6 @@ app.post("/api/admin/seller-requests/:id/approve", authenticateToken, requireAdm
   try {
     const requestId = req.params.id
     const adminId = req.user.id
-
     const sellerRequest = await SellerRequest.findById(requestId)
     if (!sellerRequest) {
       return res.status(404).json({
@@ -1389,20 +1292,17 @@ app.post("/api/admin/seller-requests/:id/approve", authenticateToken, requireAdm
         message: "Seller request not found",
       })
     }
-
     if (sellerRequest.status !== "pending") {
       return res.status(400).json({
         success: false,
         message: "This request has already been processed",
       })
     }
-
     // Update seller request
     sellerRequest.status = "approved"
     sellerRequest.processedAt = new Date()
     sellerRequest.processedBy = adminId
     await sellerRequest.save()
-
     // Update user to seller
     const user = await User.findById(sellerRequest.userId)
     if (user) {
@@ -1415,7 +1315,6 @@ app.post("/api/admin/seller-requests/:id/approve", authenticateToken, requireAdm
       user.updatedAt = new Date()
       await user.save()
     }
-
     res.json({
       success: true,
       message: "Seller request approved successfully",
@@ -1436,7 +1335,6 @@ app.post("/api/admin/seller-requests/:id/reject", authenticateToken, requireAdmi
     const requestId = req.params.id
     const adminId = req.user.id
     const { reason } = req.body
-
     const sellerRequest = await SellerRequest.findById(requestId)
     if (!sellerRequest) {
       return res.status(404).json({
@@ -1444,21 +1342,18 @@ app.post("/api/admin/seller-requests/:id/reject", authenticateToken, requireAdmi
         message: "Seller request not found",
       })
     }
-
     if (sellerRequest.status !== "pending") {
       return res.status(400).json({
         success: false,
         message: "This request has already been processed",
       })
     }
-
     // Update seller request
     sellerRequest.status = "rejected"
     sellerRequest.processedAt = new Date()
     sellerRequest.processedBy = adminId
     sellerRequest.rejectionReason = reason
     await sellerRequest.save()
-
     // Update user status
     const user = await User.findById(sellerRequest.userId)
     if (user) {
@@ -1466,7 +1361,6 @@ app.post("/api/admin/seller-requests/:id/reject", authenticateToken, requireAdmi
       user.updatedAt = new Date()
       await user.save()
     }
-
     res.json({
       success: true,
       message: "Seller request rejected successfully",
@@ -1485,9 +1379,7 @@ app.post("/api/admin/seller-requests/:id/reject", authenticateToken, requireAdmi
 app.get("/api/admin/sellers", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { page = 1, limit = 10, search, status } = req.query
-
     const query = { userType: "seller" }
-
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: "i" } },
@@ -1495,19 +1387,15 @@ app.get("/api/admin/sellers", authenticateToken, requireAdmin, async (req, res) 
         { storeName: { $regex: search, $options: "i" } },
       ]
     }
-
     if (status) {
       query.isActive = status === "active"
     }
-
     const sellers = await User.find(query)
       .select("-password")
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit)
-
     const total = await User.countDocuments(query)
-
     res.json({
       success: true,
       sellers,
@@ -1529,28 +1417,23 @@ app.patch("/api/admin/sellers/:id/status", authenticateToken, requireAdmin, asyn
   try {
     const sellerId = req.params.id
     const { isActive } = req.body
-
     const seller = await User.findOne({
       _id: sellerId,
       userType: "seller",
     })
-
     if (!seller) {
       return res.status(404).json({
         success: false,
         message: "Seller not found",
       })
     }
-
     seller.isActive = isActive
     seller.updatedAt = new Date()
     await seller.save()
-
     // If deactivating, also deactivate all their items
     if (!isActive) {
       await Item.updateMany({ sellerId: sellerId }, { isAvailable: false, updatedAt: new Date() })
     }
-
     res.json({
       success: true,
       message: `Seller ${isActive ? "activated" : "deactivated"} successfully`,
@@ -1575,7 +1458,6 @@ app.patch("/api/admin/items/:id/status", authenticateToken, requireAdmin, async 
   try {
     const itemId = req.params.id
     const { isAvailable } = req.body
-
     const item = await Item.findById(itemId)
     if (!item) {
       return res.status(404).json({
@@ -1583,11 +1465,9 @@ app.patch("/api/admin/items/:id/status", authenticateToken, requireAdmin, async 
         message: "Item not found",
       })
     }
-
     item.isAvailable = !!isAvailable
     item.updatedAt = new Date()
     await item.save()
-
     res.json({
       success: true,
       message: `Item ${isAvailable ? "activated (visible)" : "deactivated (hidden)"} successfully`,
@@ -1610,9 +1490,7 @@ app.patch("/api/admin/items/:id/status", authenticateToken, requireAdmin, async 
 app.get("/api/admin/users", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { page = 1, limit = 10, search, userType } = req.query
-
     const query = { userType: { $ne: "admin" } }
-
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: "i" } },
@@ -1620,19 +1498,15 @@ app.get("/api/admin/users", authenticateToken, requireAdmin, async (req, res) =>
         { phone: { $regex: search, $options: "i" } },
       ]
     }
-
     if (userType && userType !== "all") {
       query.userType = userType
     }
-
     const users = await User.find(query)
       .select("-password")
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit)
-
     const total = await User.countDocuments(query)
-
     res.json({
       success: true,
       users,
@@ -1653,7 +1527,6 @@ app.get("/api/admin/users", authenticateToken, requireAdmin, async (req, res) =>
 app.post("/api/create-admin", async (req, res) => {
   try {
     const { name, email, phone, password, secretKey } = req.body
-
     // Use a secret key to protect this endpoint
     if (secretKey !== "create-admin-secret-2024") {
       return res.status(401).json({
@@ -1661,7 +1534,6 @@ app.post("/api/create-admin", async (req, res) => {
         message: "Invalid secret key",
       })
     }
-
     // Check if admin already exists
     const existingAdmin = await User.findOne({ userType: "admin" })
     if (existingAdmin) {
@@ -1670,22 +1542,18 @@ app.post("/api/create-admin", async (req, res) => {
         message: "Admin user already exists",
       })
     }
-
     // Check if user with email/phone already exists
     const existingUser = await User.findOne({
       $or: [{ email }, { phone }],
     })
-
     if (existingUser) {
       return res.status(400).json({
         success: false,
         message: "User already exists with this email or phone number.",
       })
     }
-
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10)
-
     // Create admin user
     const admin = new User({
       name,
@@ -1695,9 +1563,7 @@ app.post("/api/create-admin", async (req, res) => {
       userType: "admin",
       isVerified: true,
     })
-
     await admin.save()
-
     res.status(201).json({
       success: true,
       message: "Admin user created successfully!",
@@ -1722,26 +1588,21 @@ app.patch("/api/admin/users/:id/status", authenticateToken, requireAdmin, async 
   try {
     const userId = req.params.id
     const { isActive } = req.body
-
     // Prevent admin from changing their own status or other admins
     const user = await User.findOne({ _id: userId, userType: { $ne: "admin" } })
-
     if (!user) {
       return res.status(404).json({
         success: false,
         message: "User not found or you cannot modify admin status",
       })
     }
-
     user.isActive = isActive
     user.updatedAt = new Date()
     await user.save()
-
     // If user is a seller, also update their items' isAvailable status
     if (user.userType === "seller") {
       await Item.updateMany({ sellerId: userId }, { isAvailable: !!isActive, updatedAt: new Date() })
     }
-
     res.json({
       success: true,
       message: `User ${isActive ? "activated" : "deactivated"} successfully`,
@@ -1770,23 +1631,19 @@ app.patch("/api/admin/users/:id/status", authenticateToken, requireAdmin, async 
 app.post("/api/items", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
-
     if (!user || user.userType !== "seller") {
       return res.status(403).json({
         success: false,
         message: "Only approved sellers can add items",
       })
     }
-
     if (!user.isActive) {
       return res.status(403).json({
         success: false,
         message: "Your seller account is currently deactivated. Please contact admin.",
       })
     }
-
     const { name, description, price, category, imageUrl, quantity, unit } = req.body
-
     const item = new Item({
       name,
       description,
@@ -1799,9 +1656,7 @@ app.post("/api/items", authenticateToken, async (req, res) => {
       sellerName: user.name,
       storeName: user.storeName || user.name,
     })
-
     await item.save()
-
     res.status(201).json({
       success: true,
       message: "Item added successfully!",
@@ -1820,24 +1675,19 @@ app.post("/api/items", authenticateToken, async (req, res) => {
 app.get("/api/items", async (req, res) => {
   try {
     const { category, search, page = 1, limit = 20 } = req.query
-
     // First get active sellers
     const activeSellers = await User.find({
       userType: "seller",
       isActive: true,
     }).select("_id")
-
     const activeSellerIds = activeSellers.map((seller) => seller._id)
-
     const query = {
       isAvailable: true,
       sellerId: { $in: activeSellerIds },
     }
-
     if (category) {
       query.category = { $regex: category, $options: "i" }
     }
-
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: "i" } },
@@ -1845,14 +1695,11 @@ app.get("/api/items", async (req, res) => {
         { category: { $regex: search, $options: "i" } },
       ]
     }
-
     const items = await Item.find(query)
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit)
-
     const total = await Item.countDocuments(query)
-
     res.json({
       success: true,
       items,
@@ -1873,16 +1720,13 @@ app.get("/api/items", async (req, res) => {
 app.get("/api/items/my-items", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
-
     if (!user || user.userType !== "seller") {
       return res.status(403).json({
         success: false,
         message: "Only sellers can view their items",
       })
     }
-
     const items = await Item.find({ sellerId: user._id }).sort({ createdAt: -1 })
-
     res.json({
       success: true,
       items,
@@ -1903,19 +1747,15 @@ app.put("/api/items/:id", authenticateToken, async (req, res) => {
       _id: req.params.id,
       sellerId: req.user.id,
     })
-
     if (!item) {
       return res.status(404).json({
         success: false,
         message: "Item not found or you are not authorized to update it",
       })
     }
-
     const updates = req.body
     updates.updatedAt = new Date()
-
     const updatedItem = await Item.findByIdAndUpdate(req.params.id, updates, { new: true })
-
     res.json({
       success: true,
       message: "Item updated successfully!",
@@ -1937,14 +1777,12 @@ app.delete("/api/items/:id", authenticateToken, async (req, res) => {
       _id: req.params.id,
       sellerId: req.user.id,
     })
-
     if (!item) {
       return res.status(404).json({
         success: false,
         message: "Item not found or you are not authorized to delete it",
       })
     }
-
     res.json({
       success: true,
       message: "Item deleted successfully!",
@@ -1962,7 +1800,6 @@ app.delete("/api/items/:id", authenticateToken, async (req, res) => {
 app.get("/api/categories", async (req, res) => {
   try {
     const categories = await Item.distinct("category")
-
     res.json({
       success: true,
       categories,
@@ -1985,7 +1822,6 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
   try {
     const { items, address, paymentMethod, paymentId, razorpayOrderId, subtotal, deliveryFee, taxAmount, totalAmount } =
       req.body
-
     // Validate required fields
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
@@ -1993,24 +1829,20 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
         message: "Order items are required",
       })
     }
-
     if (!address || !address.name || !address.phone || !address.address) {
       return res.status(400).json({
         success: false,
         message: "Delivery address is required",
       })
     }
-
     if (!paymentMethod || !["cod", "online"].includes(paymentMethod)) {
       return res.status(400).json({
         success: false,
         message: "Valid payment method is required",
       })
     }
-
     // Generate unique order ID
     const orderId = generateOrderId()
-
     // Set payment status based on payment method
     let paymentStatus = "pending"
     if (paymentMethod === "cod") {
@@ -2018,11 +1850,9 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
     } else if (paymentMethod === "online" && paymentId) {
       paymentStatus = "paid"
     }
-
     // Calculate estimated delivery (7 days from now)
     const estimatedDelivery = new Date()
     estimatedDelivery.setDate(estimatedDelivery.getDate() + 7)
-
     const order = new Order({
       userId: req.user.id,
       orderId,
@@ -2039,9 +1869,7 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       orderStatus: "confirmed",
       estimatedDelivery,
     })
-
     await order.save()
-
     // Clear user's cart after successful order
     try {
       await Cart.deleteOne({ userId: req.user.id })
@@ -2049,7 +1877,6 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       console.error("Failed to clear cart after order:", cartError)
       // Don't fail the order if cart clearing fails
     }
-
     // Send order confirmation email
     try {
       const user = await User.findById(req.user.id)
@@ -2058,7 +1885,6 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       console.error("Failed to send order confirmation email:", emailError)
       // Don't fail the order creation if email fails
     }
-
     res.status(201).json({
       success: true,
       message: "Order placed successfully!",
@@ -2086,19 +1912,15 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
 app.get("/api/orders", authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query
-
     const query = { userId: req.user.id }
     if (status) {
       query.orderStatus = status
     }
-
     const orders = await Order.find(query)
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit)
-
     const total = await Order.countDocuments(query)
-
     res.json({
       success: true,
       orders,
@@ -2122,14 +1944,12 @@ app.get("/api/orders/:orderId", authenticateToken, async (req, res) => {
       orderId: req.params.orderId,
       userId: req.user.id,
     })
-
     if (!order) {
       return res.status(404).json({
         success: false,
         message: "Order not found",
       })
     }
-
     res.json({
       success: true,
       order,
@@ -2147,19 +1967,16 @@ app.get("/api/orders/:orderId", authenticateToken, async (req, res) => {
 app.patch("/api/orders/:orderId/cancel", authenticateToken, async (req, res) => {
   try {
     const { reason } = req.body
-
     const order = await Order.findOne({
       orderId: req.params.orderId,
       userId: req.user.id,
     })
-
     if (!order) {
       return res.status(404).json({
         success: false,
         message: "Order not found",
       })
     }
-
     // Check if order can be cancelled
     if (!["pending", "confirmed"].includes(order.orderStatus)) {
       return res.status(400).json({
@@ -2167,19 +1984,15 @@ app.patch("/api/orders/:orderId/cancel", authenticateToken, async (req, res) => 
         message: "Order cannot be cancelled at this stage",
       })
     }
-
     order.orderStatus = "cancelled"
     order.cancelledAt = new Date()
     order.cancellationReason = reason || "Cancelled by user"
     order.updatedAt = new Date()
-
     // If payment was made online, mark for refund
     if (order.paymentMethod === "online" && order.paymentStatus === "paid") {
       order.paymentStatus = "refunded"
     }
-
     await order.save()
-
     res.json({
       success: true,
       message: "Order cancelled successfully",
@@ -2199,31 +2012,26 @@ app.patch("/api/orders/:orderId/cancel", authenticateToken, async (req, res) => 
 })
 
 // =============================================================================
-// RAZORPAY & PAYMENT APIs - COMMENTED FOR DEVELOPMENT
+// RAZORPAY & PAYMENT APIs - UNCOMMENTED
 // =============================================================================
-
 
 // Create Razorpay order
 app.post('/api/create-razorpay-order', authenticateToken, async (req, res) => {
   try {
     const { amount, currency = 'INR' } = req.body;
-
     if (!amount || amount <= 0) {
       return res.status(400).json({
         success: false,
         message: 'Valid amount is required'
       });
     }
-
     const options = {
       amount: Math.round(amount), // Amount in paise
       currency,
       receipt: `receipt_${Date.now()}`,
       payment_capture: 1
     };
-
     const order = await razorpay.orders.create(options);
-
     res.json({
       success: true,
       id: order.id,
@@ -2244,13 +2052,11 @@ app.post('/api/create-razorpay-order', authenticateToken, async (req, res) => {
 app.post('/api/verify-razorpay-payment', authenticateToken, async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-
     const sign = razorpay_order_id + "|" + razorpay_payment_id;
     const expectedSign = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
       .update(sign.toString())
       .digest("hex");
-
     if (razorpay_signature === expectedSign) {
       res.json({
         success: true,
@@ -2273,7 +2079,6 @@ app.post('/api/verify-razorpay-payment', authenticateToken, async (req, res) => 
   }
 });
 
-
 const PORT = process.env.PORT || 3000
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`)
@@ -2289,7 +2094,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("EMAIL_USER=your_email@gmail.com")
   console.log("EMAIL_PASSWORD=your_app_password")
   console.log("MONGODB_URI=your_mongodb_connection_string")
-  console.log("// RAZORPAY_KEY_ID=your_razorpay_key_id (commented for development)")
-  console.log("// RAZORPAY_KEY_SECRET=your_razorpay_key_secret (commented for development)")
+  console.log("RAZORPAY_KEY_ID=your_razorpay_key_id") // Uncommented
+  console.log("RAZORPAY_KEY_SECRET=your_razorpay_key_secret") // Uncommented
   console.log("=====================================\n")
 })
