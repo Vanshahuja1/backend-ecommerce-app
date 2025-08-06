@@ -5,7 +5,7 @@ const bcrypt = require("bcryptjs")
 const jwt = require("jsonwebtoken")
 const nodemailer = require("nodemailer")
 const crypto = require("crypto")
-// const Razorpay = require('razorpay'); // Commented for development
+const Razorpay = require('razorpay'); // Commented for development
 require("dotenv").config()
 
 const app = express()
@@ -15,12 +15,12 @@ app.use(cors())
 app.use(express.json())
 
 // Initialize Razorpay - Commented for development
-/*
+
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
-*/
+
 
 // MongoDB Connection
 mongoose.connect(
@@ -2202,7 +2202,7 @@ app.patch("/api/orders/:orderId/cancel", authenticateToken, async (req, res) => 
 // RAZORPAY & PAYMENT APIs - COMMENTED FOR DEVELOPMENT
 // =============================================================================
 
-/*
+
 // Create Razorpay order
 app.post('/api/create-razorpay-order', authenticateToken, async (req, res) => {
   try {
@@ -2272,7 +2272,7 @@ app.post('/api/verify-razorpay-payment', authenticateToken, async (req, res) => 
     });
   }
 });
-*/
+
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, "0.0.0.0", () => {
