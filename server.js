@@ -2078,6 +2078,9 @@ app.post('/api/verify-razorpay-payment', authenticateToken, async (req, res) => 
     });
   }
 });
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, "0.0.0.0", () => {
