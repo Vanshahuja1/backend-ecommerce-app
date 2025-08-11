@@ -5,7 +5,9 @@ const bcrypt = require("bcryptjs")
 const jwt = require("jsonwebtoken")
 const nodemailer = require("nodemailer")
 const crypto = require("crypto")
-const Razorpay = require('razorpay'); // Uncommented
+const Razorpay = require('razorpay')
+const { OAuth2Client } = require('google-auth-library')
+const fetch = require('node-fetch') // npm install node-fetch@2
 
 require("dotenv").config()
 
@@ -15,11 +17,15 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
-// Initialize Razorpay - Uncommented
+// Initialize Razorpay
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+})
+
+// Google OAuth2 Client
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID'
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID)
 
 // MongoDB Connection
 mongoose.connect(
@@ -176,7 +182,7 @@ const otpSchema = new mongoose.Schema({
 
 // Models
 const User = mongoose.model("User", userSchema)
-const Cart = mongoose.model("Cart", cartSchema) // NEW
+const Cart = mongoose.model("Cart", cartSchema)
 const Address = mongoose.model("Address", addressSchema)
 const Order = mongoose.model("Order", orderSchema)
 const SellerRequest = mongoose.model("SellerRequest", sellerRequestSchema)
@@ -192,7 +198,7 @@ const transporter = nodemailer.createTransport({
   },
 })
 
-// JWT Middleware - Defined inline
+// JWT Middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"]
   const token = authHeader && authHeader.split(" ")[1]
@@ -2078,9 +2084,129 @@ app.post('/api/verify-razorpay-payment', authenticateToken, async (req, res) => 
     });
   }
 });
+// =============================================================================
+// GOOGLE & FACEBOOK OAUTH ROUTES
+// =============================================================================
+
+// Google OAuth Login
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { idToken } = req.body
+    if (!idToken) return res.status(400).json({ success: false, message: 'No idToken provided' })
+
+    // Verify token
+    const ticket = await googleClient.verifyIdToken({
+      idToken,
+      audience: GOOGLE_CLIENT_ID,
+    })
+    const payload = ticket.getPayload()
+    const { email, name, picture } = payload
+
+    // Find or create user
+    let user = await User.findOne({ email })
+    if (!user) {
+      user = new User({
+        name,
+        email,
+        phone: '', // You may want to ask for phone later
+        password: '', // Not needed for OAuth
+        userType: 'buyer',
+        isVerified: true,
+        profileImage: picture,
+      })
+      await user.save()
+    }
+
+    // Generate JWT
+    const token = jwt.sign({ id: user._id, email: user.email }, process.env.JWT_SECRET || "your-secret-key", {
+      expiresIn: "7d",
+    })
+
+    const userData = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      userType: user.userType,
+      profileImage: user.profileImage,
+      isVerified: user.isVerified,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+    }
+
+    res.json({
+      success: true,
+      message: "Google login successful!",
+      user: userData,
+      token,
+    })
+  } catch (error) {
+    console.error("Google OAuth error:", error)
+    res.status(500).json({ success: false, message: "Google login failed" })
+  }
+})
+
+// Facebook OAuth Login
+app.post('/api/auth/facebook', async (req, res) => {
+  try {
+    const { accessToken } = req.body
+    if (!accessToken) return res.status(400).json({ success: false, message: 'No accessToken provided' })
+
+    // Verify token and get user info
+    const fbRes = await fetch(`https://graph.facebook.com/me?fields=id,name,email,picture.type(large)&access_token=${accessToken}`)
+    const fbData = await fbRes.json()
+    if (!fbData.email) {
+      return res.status(400).json({ success: false, message: 'Facebook account has no email' })
+    }
+
+    // Find or create user
+    let user = await User.findOne({ email: fbData.email })
+    if (!user) {
+      user = new User({
+        name: fbData.name,
+        email: fbData.email,
+        phone: '', // You may want to ask for phone later
+        password: '', // Not needed for OAuth
+        userType: 'buyer',
+        isVerified: true,
+        profileImage: fbData.picture?.data?.url,
+      })
+      await user.save()
+    }
+
+    // Generate JWT
+    const token = jwt.sign({ id: user._id, email: user.email }, process.env.JWT_SECRET || "your-secret-key", {
+      expiresIn: "7d",
+    })
+
+    const userData = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      userType: user.userType,
+      profileImage: user.profileImage,
+      isVerified: user.isVerified,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+    }
+
+    res.json({
+      success: true,
+      message: "Facebook login successful!",
+      user: userData,
+      token,
+    })
+  } catch (error) {
+    console.error("Facebook OAuth error:", error)
+    res.status(500).json({ success: false, message: "Facebook login failed" })
+  }
+})
+
+// Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
-});
+  res.status(200).json({ status: 'ok' })
+})
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, "0.0.0.0", () => {
@@ -2097,7 +2223,8 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("EMAIL_USER=your_email@gmail.com")
   console.log("EMAIL_PASSWORD=your_app_password")
   console.log("MONGODB_URI=your_mongodb_connection_string")
-  console.log("RAZORPAY_KEY_ID=your_razorpay_key_id") // Uncommented
-  console.log("RAZORPAY_KEY_SECRET=your_razorpay_key_secret") // Uncommented
+  console.log("RAZORPAY_KEY_ID=your_razorpay_key_id")
+  console.log("RAZORPAY_KEY_SECRET=your_razorpay_key_secret")
+  console.log("GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com")
   console.log("=====================================\n")
 })
