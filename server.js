@@ -1637,7 +1637,7 @@ app.patch("/api/admin/users/:id/status", authenticateToken, requireAdmin, async 
 app.post("/api/items", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
-    if (!user || user.userType !== "seller") {
+    if (user.userType !== "seller" && user.userType !=="admin") {
       return res.status(403).json({
         success: false,
         message: "Only approved sellers can add items",
@@ -1726,7 +1726,7 @@ app.get("/api/items", async (req, res) => {
 app.get("/api/items/my-items", authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
-    if (!user || user.userType !== "seller") {
+    if ( user.userType !== "seller" && user.userType !== "admin") {
       return res.status(403).json({
         success: false,
         message: "Only sellers can view their items",
