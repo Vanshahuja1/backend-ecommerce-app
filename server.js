@@ -5,9 +5,9 @@ const bcrypt = require("bcryptjs")
 const jwt = require("jsonwebtoken")
 const nodemailer = require("nodemailer")
 const crypto = require("crypto")
-const Razorpay = require('razorpay')
-const { OAuth2Client } = require('google-auth-library')
-const fetch = require('node-fetch') // npm install node-fetch@2
+const Razorpay = require("razorpay")
+const { OAuth2Client } = require("google-auth-library")
+const fetch = require("node-fetch") // npm install node-fetch@2
 
 require("dotenv").config()
 
@@ -24,7 +24,7 @@ const razorpay = new Razorpay({
 })
 
 // Google OAuth2 Client
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID'
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "YOUR_GOOGLE_CLIENT_ID"
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID)
 
 // MongoDB Connection
@@ -2022,77 +2022,77 @@ app.patch("/api/orders/:orderId/cancel", authenticateToken, async (req, res) => 
 // =============================================================================
 
 // Create Razorpay order
-app.post('/api/create-razorpay-order', authenticateToken, async (req, res) => {
+app.post("/api/create-razorpay-order", authenticateToken, async (req, res) => {
   try {
-    const { amount, currency = 'INR' } = req.body;
+    const { amount, currency = "INR" } = req.body
     if (!amount || amount <= 0) {
       return res.status(400).json({
         success: false,
-        message: 'Valid amount is required'
-      });
+        message: "Valid amount is required",
+      })
     }
     const options = {
       amount: Math.round(amount), // Amount in paise
       currency,
       receipt: `receipt_${Date.now()}`,
-      payment_capture: 1
-    };
-    const order = await razorpay.orders.create(options);
+      payment_capture: 1,
+    }
+    const order = await razorpay.orders.create(options)
     res.json({
       success: true,
       id: order.id,
       amount: order.amount,
       currency: order.currency,
-      receipt: order.receipt
-    });
+      receipt: order.receipt,
+    })
   } catch (error) {
-    console.error('Create Razorpay order error:', error);
+    console.error("Create Razorpay order error:", error)
     res.status(500).json({
       success: false,
-      message: 'Failed to create payment order'
-    });
+      message: "Failed to create payment order",
+    })
   }
-});
+})
 
 // Verify Razorpay payment
-app.post('/api/verify-razorpay-payment', authenticateToken, async (req, res) => {
+app.post("/api/verify-razorpay-payment", authenticateToken, async (req, res) => {
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-    const sign = razorpay_order_id + "|" + razorpay_payment_id;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body
+    const sign = razorpay_order_id + "|" + razorpay_payment_id
     const expectedSign = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
       .update(sign.toString())
-      .digest("hex");
+      .digest("hex")
     if (razorpay_signature === expectedSign) {
       res.json({
         success: true,
-        message: 'Payment verified successfully',
+        message: "Payment verified successfully",
         paymentId: razorpay_payment_id,
-        orderId: razorpay_order_id
-      });
+        orderId: razorpay_order_id,
+      })
     } else {
       res.status(400).json({
         success: false,
-        message: 'Invalid payment signature'
-      });
+        message: "Invalid payment signature",
+      })
     }
   } catch (error) {
-    console.error('Verify payment error:', error);
+    console.error("Verify payment error:", error)
     res.status(500).json({
       success: false,
-      message: 'Payment verification failed'
-    });
+      message: "Payment verification failed",
+    })
   }
-});
+})
 // =============================================================================
 // GOOGLE & FACEBOOK OAUTH ROUTES
 // =============================================================================
 
 // Google OAuth Login
-app.post('/api/auth/google', async (req, res) => {
+app.post("/api/auth/google", async (req, res) => {
   try {
     const { idToken } = req.body
-    if (!idToken) return res.status(400).json({ success: false, message: 'No idToken provided' })
+    if (!idToken) return res.status(400).json({ success: false, message: "No idToken provided" })
 
     // Verify token
     const ticket = await googleClient.verifyIdToken({
@@ -2108,9 +2108,9 @@ app.post('/api/auth/google', async (req, res) => {
       user = new User({
         name,
         email,
-        phone: '', // You may want to ask for phone later
-        password: '', // Not needed for OAuth
-        userType: 'buyer',
+        phone: "", // You may want to ask for phone later
+        password: "", // Not needed for OAuth
+        userType: "buyer",
         isVerified: true,
         profileImage: picture,
       })
@@ -2147,16 +2147,18 @@ app.post('/api/auth/google', async (req, res) => {
 })
 
 // Facebook OAuth Login
-app.post('/api/auth/facebook', async (req, res) => {
+app.post("/api/auth/facebook", async (req, res) => {
   try {
     const { accessToken } = req.body
-    if (!accessToken) return res.status(400).json({ success: false, message: 'No accessToken provided' })
+    if (!accessToken) return res.status(400).json({ success: false, message: "No accessToken provided" })
 
     // Verify token and get user info
-    const fbRes = await fetch(`https://graph.facebook.com/me?fields=id,name,email,picture.type(large)&access_token=${accessToken}`)
+    const fbRes = await fetch(
+      `https://graph.facebook.com/me?fields=id,name,email,picture.type(large)&access_token=${accessToken}`,
+    )
     const fbData = await fbRes.json()
     if (!fbData.email) {
-      return res.status(400).json({ success: false, message: 'Facebook account has no email' })
+      return res.status(400).json({ success: false, message: "Facebook account has no email" })
     }
 
     // Find or create user
@@ -2165,9 +2167,9 @@ app.post('/api/auth/facebook', async (req, res) => {
       user = new User({
         name: fbData.name,
         email: fbData.email,
-        phone: '', // You may want to ask for phone later
-        password: '', // Not needed for OAuth
-        userType: 'buyer',
+        phone: "", // You may want to ask for phone later
+        password: "", // Not needed for OAuth
+        userType: "buyer",
         isVerified: true,
         profileImage: fbData.picture?.data?.url,
       })
@@ -2204,8 +2206,236 @@ app.post('/api/auth/facebook', async (req, res) => {
 })
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' })
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" })
+})
+
+// Get all orders for admin
+app.get("/api/admin/orders", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 50, status, search } = req.query
+
+    const query = {}
+
+    // Filter by status if provided
+    if (status && status !== "all") {
+      query.orderStatus = status
+    }
+
+    // Search functionality
+    if (search) {
+      query.$or = [
+        { orderId: { $regex: search, $options: "i" } },
+        { "userId.name": { $regex: search, $options: "i" } },
+        { "userId.email": { $regex: search, $options: "i" } },
+      ]
+    }
+
+    const orders = await Order.find(query)
+      .populate("userId", "name email phone")
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+
+    const total = await Order.countDocuments(query)
+
+    res.json({
+      success: true,
+      data: {
+        orders,
+        totalPages: Math.ceil(total / limit),
+        currentPage: Number.parseInt(page),
+        totalOrders: total,
+      },
+    })
+  } catch (error) {
+    console.error("Get admin orders error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch orders",
+    })
+  }
+})
+
+// Get all users for admin
+app.get("/api/admin/users", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 100, userType, search } = req.query
+
+    const query = {}
+
+    // Filter by user type if provided
+    if (userType && userType !== "all") {
+      query.userType = userType
+    }
+
+    // Search functionality
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+      ]
+    }
+
+    const users = await User.find(query)
+      .select("-password") // Exclude password field
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+
+    const total = await User.countDocuments(query)
+
+    res.json({
+      success: true,
+      users,
+      totalPages: Math.ceil(total / limit),
+      currentPage: Number.parseInt(page),
+      totalUsers: total,
+    })
+  } catch (error) {
+    console.error("Get admin users error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch users",
+    })
+  }
+})
+
+app.post("/api/items", authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id)
+
+    // Allow both sellers and admins to add items
+    if (!user || (user.userType !== "seller" && user.userType !== "admin")) {
+      return res.status(403).json({
+        success: false,
+        message: "Only approved sellers and admins can add items",
+      })
+    }
+
+    // For sellers, check if they are active
+    if (user.userType === "seller" && !user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Your seller account is currently deactivated. Please contact admin.",
+      })
+    }
+
+    const { name, description, price, category, imageUrl, quantity, unit } = req.body
+
+    const item = new Item({
+      name,
+      description,
+      price,
+      category,
+      imageUrl,
+      quantity,
+      unit,
+      sellerId: user._id,
+      sellerName: user.name,
+      storeName: user.storeName || user.name,
+    })
+
+    await item.save()
+
+    res.status(201).json({
+      success: true,
+      message: "Item added successfully!",
+      item,
+    })
+  } catch (error) {
+    console.error("Add item error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to add item. Please try again.",
+    })
+  }
+})
+
+app.patch("/api/admin/items/:itemId/status", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { itemId } = req.params
+    const { isAvailable } = req.body
+
+    const item = await Item.findByIdAndUpdate(itemId, { isAvailable }, { new: true })
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: "Item not found",
+      })
+    }
+
+    res.json({
+      success: true,
+      message: `Item ${isAvailable ? "made available" : "hidden"} successfully`,
+      item,
+    })
+  } catch (error) {
+    console.error("Toggle item status error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to update item status",
+    })
+  }
+})
+
+app.post("/api/admin/orders/:orderId/invoice", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { orderId } = req.params
+
+    const order = await Order.findOne({ orderId }).populate("userId", "name email phone")
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      })
+    }
+
+    // Here you would typically generate the PDF and store it
+    // For now, we'll return a success response
+    res.json({
+      success: true,
+      message: "Invoice generated successfully",
+      invoiceUrl: `/api/admin/orders/${orderId}/invoice/download`,
+      order: order,
+    })
+  } catch (error) {
+    console.error("Generate invoice error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to generate invoice",
+    })
+  }
+})
+
+app.get("/api/admin/orders/:orderId/invoice/download", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { orderId } = req.params
+
+    const order = await Order.findOne({ orderId }).populate("userId", "name email phone")
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      })
+    }
+
+    // Return order data for PDF generation on client side
+    res.json({
+      success: true,
+      order: order,
+    })
+  } catch (error) {
+    console.error("Download invoice error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to download invoice",
+    })
+  }
 })
 
 const PORT = process.env.PORT || 3000
