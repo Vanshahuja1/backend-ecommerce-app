@@ -1520,6 +1520,65 @@ app.patch("/api/admin/sellers/:id/status", authenticateToken, requireAdmin, asyn
     })
   }
 })
+app.get("/api/admin-items", async (req, res) => {
+  try {
+    const { category, search, page = 1, limit = 20, status = "available" } = req.query
+    
+    // Query to find only admin-added items
+    const query = {
+      sellerName: "Admin", // Items added by admin have sellerName as "Admin"
+    }
+    
+    // By default, only show available items for public API
+    // You can change this behavior by modifying the default status
+    if (status === "available") {
+      query.isAvailable = true
+    } else if (status === "hidden") {
+      query.isAvailable = false
+    } else if (status === "all") {
+      // Don't filter by availability - show all admin items
+    } else {
+      // Default to available items
+      query.isAvailable = true
+    }
+    
+    // Filter by category
+    if (category) {
+      query.category = { $regex: category, $options: "i" }
+    }
+    
+    // Search functionality
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+        { category: { $regex: search, $options: "i" } },
+      ]
+    }
+
+    const items = await Item.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+
+    const total = await Item.countDocuments(query)
+
+    res.json({
+      success: true,
+      items,
+      totalPages: Math.ceil(total / limit),
+      currentPage: parseInt(page),
+      totalItems: total,
+      message: "Admin items retrieved successfully"
+    })
+  } catch (error) {
+    console.error("Get admin items error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch admin items",
+    })
+  }
+})
 
 // Admin: Toggle Item Availability
 app.patch("/api/admin/items/:id/status", authenticateToken, requireAdmin, async (req, res) => {
