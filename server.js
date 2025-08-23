@@ -7,10 +7,9 @@ const nodemailer = require("nodemailer")
 const crypto = require("crypto")
 const Razorpay = require("razorpay")
 const { OAuth2Client } = require("google-auth-library")
-const fetch = require("node-fetch") // npm install node-fetch@2
+const fetch = require("node-fetch") 
 
 require("dotenv").config()
-
 const app = express()
 
 // Middleware
@@ -1236,11 +1235,20 @@ app.get("/api/admin/stats", authenticateToken, requireAdmin, async (req, res) =>
       userType: "seller",
       isActive: true,
     })
+    const totalProducts = await Item.countDocuments({})
+    const availableProducts = await Item.countDocuments({ isAvailable: true })
+    const hiddenProducts = await Item.countDocuments({ isAvailable: false })
+    const totalOrders = await Order.countDocuments({})
+    
     const stats = {
       totalUsers,
       totalSellers,
       pendingRequests,
       activeSellers,
+      totalProducts,
+      availableProducts,
+      hiddenProducts,
+      totalOrders,
     }
     res.json({
       success: true,
@@ -2434,6 +2442,163 @@ app.get("/api/admin/orders/:orderId/invoice/download", authenticateToken, requir
     res.status(500).json({
       success: false,
       message: "Failed to download invoice",
+    })
+  }
+})
+
+// Admin: Add Product (Admin can add products without seller ID)
+app.post("/api/admin/items", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { name, description, price, category, imageUrl, quantity, unit, isAvailable = true } = req.body
+    
+    // Validate required fields
+    if (!name || !description || !price || !category || !quantity || !unit) {
+      return res.status(400).json({
+        success: false,
+        message: "All required fields must be provided",
+      })
+    }
+
+    // Create item with admin as the seller
+    const item = new Item({
+      name,
+      description,
+      price: Number(price),
+      category,
+      imageUrl: imageUrl || "",
+      quantity: Number(quantity),
+      unit,
+      sellerId: req.user.id, // Admin becomes the seller
+      sellerName: "Admin", // Admin name
+      storeName: "Admin Store",
+      isAvailable: !!isAvailable,
+    })
+
+    await item.save()
+
+    res.status(201).json({
+      success: true,
+      message: "Product added successfully by admin!",
+      item,
+    })
+  } catch (error) {
+    console.error("Admin add item error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to add product. Please try again.",
+    })
+  }
+})
+
+// Admin: Update Product
+app.put("/api/admin/items/:id", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const itemId = req.params.id
+    const updates = req.body
+    
+    // Remove fields that shouldn't be updated
+    delete updates.sellerId
+    delete updates.sellerName
+    delete updates.storeName
+    
+    const updatedItem = await Item.findByIdAndUpdate(
+      itemId,
+      { ...updates, updatedAt: new Date() },
+      { new: true }
+    )
+
+    if (!updatedItem) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      })
+    }
+
+    res.json({
+      success: true,
+      message: "Product updated successfully!",
+      item: updatedItem,
+    })
+  } catch (error) {
+    console.error("Admin update item error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to update product",
+    })
+  }
+})
+
+// Admin: Delete Product
+app.delete("/api/admin/items/:id", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const itemId = req.params.id
+    
+    const deletedItem = await Item.findByIdAndDelete(itemId)
+
+    if (!deletedItem) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      })
+    }
+
+    res.json({
+      success: true,
+      message: "Product deleted successfully!",
+    })
+  } catch (error) {
+    console.error("Admin delete item error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete product",
+    })
+  }
+})
+
+// Admin: Get All Products (including hidden ones)
+app.get("/api/admin/items", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { category, search, page = 1, limit = 1000, status } = req.query
+    
+    const query = {}
+    
+    // Filter by availability status
+    if (status && status !== "all") {
+      query.isAvailable = status === "available"
+    }
+    
+    if (category) {
+      query.category = { $regex: category, $options: "i" }
+    }
+    
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+        { category: { $regex: search, $options: "i" } },
+        { sellerName: { $regex: search, $options: "i" } },
+      ]
+    }
+
+    const items = await Item.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+
+    const total = await Item.countDocuments(query)
+
+    res.json({
+      success: true,
+      items,
+      totalPages: Math.ceil(total / limit),
+      currentPage: Number.parseInt(page),
+      totalItems: total,
+    })
+  } catch (error) {
+    console.error("Admin get items error:", error)
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch products",
     })
   }
 })
