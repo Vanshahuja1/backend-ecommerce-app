@@ -1475,7 +1475,7 @@ app.get("/api/admin-items", async (req, res) => {
     
     // Query to find only admin-added items
     const query = {
-      sellerName: "Admin", // Items added by admin have sellerName as "Admin"
+      sellerName: "admin", // Items added by admin have sellerName as "Admin"
     }
     
     // By default, only show available items for public API
