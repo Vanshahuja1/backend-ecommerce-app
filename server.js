@@ -169,6 +169,9 @@ const itemSchema = new mongoose.Schema({
   isAvailable: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
+  discount: { type: Number, default: 0 }, // Discount percentage (0-100)
+  tax: { type: Number, default: 0 },      // Tax percentage (0-100)
+  hasVAT: { type: Boolean, default: false }, // VAT applicability
 })
 
 const otpSchema = new mongoose.Schema({
@@ -2508,8 +2511,7 @@ app.get("/api/admin/orders/:orderId/invoice/download", authenticateToken, requir
 // Admin: Add Product (Admin can add products without seller ID)
 app.post("/api/admin/items", authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { name, description, price, category, imageUrl, quantity, unit, isAvailable = true } = req.body
-    
+    const { name, description, price, category, imageUrl, quantity, unit, discount = 0, tax = 0, hasVAT = false } = req.body    
     // Validate required fields
     if (!name || !description || !price || !category || !quantity || !unit) {
       return res.status(400).json({
@@ -2520,18 +2522,20 @@ app.post("/api/admin/items", authenticateToken, requireAdmin, async (req, res) =
 
     // Create item with admin as the seller
     const item = new Item({
-      name,
-      description,
-      price: Number(price),
-      category,
-      imageUrl: imageUrl || "",
-      quantity: Number(quantity),
-      unit,
-      sellerId: req.user.id, // Admin becomes the seller
-      sellerName: "Admin", // Admin name
-      storeName: "Admin Store",
-      isAvailable: !!isAvailable,
-    })
+  name,
+  description,
+  price,
+  category,
+  imageUrl,
+  quantity,
+  unit,
+  sellerId: user._id,
+  sellerName: user.name,
+  storeName: user.storeName || user.name,
+  discount,   // <--- NEW
+  tax,        // <--- NEW
+  hasVAT,     // <--- NEW
+})
 
     await item.save()
 
@@ -2661,6 +2665,28 @@ app.get("/api/admin/items", authenticateToken, requireAdmin, async (req, res) =>
     })
   }
 })
+// Fetch admin products with discount > 0 (public, no auth required)
+app.get("/api/admin-products/with-discount", async (req, res) => {
+  try {
+    const products = await Item.find({
+      discount: { $gt: 0 },
+      sellerName: "Admin", // Only products added by admin
+      isAvailable: true,   // Optional: only show available items
+    }).sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      count: products.length,
+      products,
+    });
+  } catch (error) {
+    console.error("Fetch admin discounted products error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch admin discounted products",
+    });
+  }
+});
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, "0.0.0.0", () => {
