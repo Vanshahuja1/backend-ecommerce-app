@@ -1528,7 +1528,6 @@ app.get("/api/admin-items", async (req, res) => {
     })
   }
 })
-
 // Admin: Toggle Item Availability
 app.patch("/api/admin/items/:id/status", authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -2509,10 +2508,12 @@ app.get("/api/admin/orders/:orderId/invoice/download", authenticateToken, requir
 })
 
 // Admin: Add Product (Admin can add products without seller ID)
+// Admin: Add Product (Admin can add products without seller ID)
 app.post("/api/admin/items", authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id) // <-- ADD THIS LINE
+    const user = await User.findById(req.user.id)
     const { name, description, price, category, imageUrl, quantity, unit, discount = 0, tax = 0, hasVAT = false } = req.body    
+    
     // Validate required fields
     if (!name || !description || !price || !category || !quantity || !unit) {
       return res.status(400).json({
@@ -2521,7 +2522,7 @@ app.post("/api/admin/items", authenticateToken, requireAdmin, async (req, res) =
       })
     }
 
-    // Create item with admin as the seller
+    // Create item with admin as the seller - use actual admin name
     const item = new Item({
       name,
       description,
@@ -2531,7 +2532,7 @@ app.post("/api/admin/items", authenticateToken, requireAdmin, async (req, res) =
       quantity,
       unit,
       sellerId: user._id,
-      sellerName: user.name,
+      sellerName: user.name, // This will be "admin" - matching your database
       storeName: user.storeName || user.name,
       discount,
       tax,
@@ -2671,8 +2672,8 @@ app.get("/api/admin-products/with-discount", async (req, res) => {
   try {
     const products = await Item.find({
       discount: { $gt: 0 },
-      sellerName: "Admin", // Only products added by admin
-      isAvailable: true,   // Optional: only show available items
+      sellerName: "admin", // Use lowercase "admin" to match your database
+      isAvailable: true,
     }).sort({ createdAt: -1 });
 
     res.json({
