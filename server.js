@@ -2511,6 +2511,7 @@ app.get("/api/admin/orders/:orderId/invoice/download", authenticateToken, requir
 // Admin: Add Product (Admin can add products without seller ID)
 app.post("/api/admin/items", authenticateToken, requireAdmin, async (req, res) => {
   try {
+    const user = await User.findById(req.user.id) // <-- ADD THIS LINE
     const { name, description, price, category, imageUrl, quantity, unit, discount = 0, tax = 0, hasVAT = false } = req.body    
     // Validate required fields
     if (!name || !description || !price || !category || !quantity || !unit) {
@@ -2522,20 +2523,20 @@ app.post("/api/admin/items", authenticateToken, requireAdmin, async (req, res) =
 
     // Create item with admin as the seller
     const item = new Item({
-  name,
-  description,
-  price,
-  category,
-  imageUrl,
-  quantity,
-  unit,
-  sellerId: user._id,
-  sellerName: user.name,
-  storeName: user.storeName || user.name,
-  discount,   // <--- NEW
-  tax,        // <--- NEW
-  hasVAT,     // <--- NEW
-})
+      name,
+      description,
+      price,
+      category,
+      imageUrl,
+      quantity,
+      unit,
+      sellerId: user._id,
+      sellerName: user.name,
+      storeName: user.storeName || user.name,
+      discount,
+      tax,
+      hasVAT,
+    })
 
     await item.save()
 
