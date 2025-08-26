@@ -52,6 +52,9 @@ const cartSchema = new mongoose.Schema({
       category: { type: String },
       unit: { type: String, required: true },
       quantity: { type: Number, required: true, min: 1 },
+      discount: { type: Number, default: 0 }, // Discount percentage (0-100)
+      tax: { type: Number, default: 0 },      // Tax percentage (0-100)
+      hasVAT: { type: Boolean, default: false }, // VAT applicability
       addedAt: { type: Date, default: Date.now },
     },
   ],
@@ -335,6 +338,7 @@ app.get("/api/cart/:userId", authenticateToken, async (req, res) => {
         message: "Access denied",
       })
     }
+    
     const cart = await Cart.findOne({ userId })
     if (!cart) {
       return res.json({
@@ -344,9 +348,16 @@ app.get("/api/cart/:userId", authenticateToken, async (req, res) => {
         totalPrice: 0,
       })
     }
-    // Calculate totals
+    
+    // Calculate totals with discount and tax
     const totalItems = cart.items.reduce((sum, item) => sum + item.quantity, 0)
-    const totalPrice = cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+    const totalPrice = cart.items.reduce((sum, item) => {
+      const originalPrice = item.price
+      const discountedPrice = originalPrice * (1 - (item.discount || 0) / 100)
+      const finalPrice = discountedPrice * (1 + (item.tax || 0) / 100)
+      return sum + (finalPrice * item.quantity)
+    }, 0)
+    
     res.json({
       success: true,
       cartItems: cart.items.map((item) => ({
@@ -358,6 +369,9 @@ app.get("/api/cart/:userId", authenticateToken, async (req, res) => {
         category: item.category,
         unit: item.unit,
         quantity: item.quantity,
+        discount: item.discount || 0,
+        tax: item.tax || 0,
+        hasVAT: item.hasVAT || false,
         addedAt: item.addedAt,
       })),
       totalItems,
@@ -375,7 +389,8 @@ app.get("/api/cart/:userId", authenticateToken, async (req, res) => {
 // Add item to user's cart
 app.post("/api/cart/add", authenticateToken, async (req, res) => {
   try {
-    const { userId, productId, name, price, imageUrl, category, unit, quantity = 1 } = req.body
+    const { userId, productId, quantity = 1 } = req.body
+    
     // Verify user can only modify their own cart
     if (req.user.id !== userId) {
       return res.status(403).json({
@@ -383,13 +398,16 @@ app.post("/api/cart/add", authenticateToken, async (req, res) => {
         message: "Access denied",
       })
     }
-    // Validate required fields
-    if (!productId || !name || !price || !unit) {
-      return res.status(400).json({
+    
+    // Fetch complete product data from database
+    const product = await Item.findById(productId)
+    if (!product) {
+      return res.status(404).json({
         success: false,
-        message: "Product ID, name, price, and unit are required",
+        message: "Product not found",
       })
     }
+    
     // Find or create cart for user
     let cart = await Cart.findOne({ userId })
     if (!cart) {
@@ -398,27 +416,37 @@ app.post("/api/cart/add", authenticateToken, async (req, res) => {
         items: [],
       })
     }
+    
     // Check if item already exists in cart
     const existingItemIndex = cart.items.findIndex((item) => item.productId === productId)
     if (existingItemIndex > -1) {
       // Update quantity if item exists
       cart.items[existingItemIndex].quantity += quantity
       cart.items[existingItemIndex].addedAt = new Date()
+      // Update with latest product data
+      cart.items[existingItemIndex].discount = product.discount || 0
+      cart.items[existingItemIndex].tax = product.tax || 0
+      cart.items[existingItemIndex].hasVAT = product.hasVAT || false
     } else {
-      // Add new item to cart
+      // Add new item to cart with complete product data
       cart.items.push({
         productId,
-        name,
-        price: Number.parseFloat(price),
-        imageUrl: imageUrl || "",
-        category: category || "",
-        unit,
+        name: product.name,
+        price: product.price,
+        imageUrl: product.imageUrl || "",
+        category: product.category || "",
+        unit: product.unit,
         quantity: Number.parseInt(quantity),
+        discount: product.discount || 0,
+        tax: product.tax || 0,
+        hasVAT: product.hasVAT || false,
         addedAt: new Date(),
       })
     }
+    
     cart.updatedAt = new Date()
     await cart.save()
+    
     res.json({
       success: true,
       message: "Item added to cart successfully",
