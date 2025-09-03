@@ -7,7 +7,9 @@ const nodemailer = require("nodemailer")
 const crypto = require("crypto")
 const Razorpay = require("razorpay")
 const { OAuth2Client } = require("google-auth-library")
-const fetch = require("node-fetch") 
+const fetch = require("node-fetch")
+const PDFDocument = require('pdfkit');
+const stream = require('stream');
 
 require("dotenv").config()
 const app = express()
@@ -2510,30 +2512,61 @@ app.post("/api/admin/orders/:orderId/invoice", authenticateToken, requireAdmin, 
 
 app.get("/api/admin/orders/:orderId/invoice/download", authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { orderId } = req.params
+    const { orderId } = req.params;
 
-    const order = await Order.findOne({ orderId }).populate("userId", "name email phone")
+    const order = await Order.findOne({ orderId }).populate("userId", "name email phone");
 
     if (!order) {
       return res.status(404).json({
         success: false,
         message: "Order not found",
-      })
+      });
     }
 
-    // Return order data for PDF generation on client side
-    res.json({
-      success: true,
-      order: order,
-    })
+    // Generate PDF in memory
+    const doc = new PDFDocument();
+    const buffers = [];
+    doc.on('data', buffers.push.bind(buffers));
+    doc.on('end', () => {
+      const pdfData = Buffer.concat(buffers);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="invoice-${orderId}.pdf"`);
+
+      res.send(pdfData);
+    });
+
+    // PDF Content
+    doc.fontSize(20).text('Invoice', { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(12).text(`Order ID: ${order.orderId}`);
+    doc.text(`Date: ${order.createdAt.toDateString()}`);
+    doc.text(`Customer Name: ${order.userId.name}`);
+    doc.text(`Customer Email: ${order.userId.email}`);
+    doc.text(`Customer Phone: ${order.userId.phone}`);
+    doc.moveDown();
+    doc.text('Items:', { underline: true });
+    order.items.forEach((item, idx) => {
+      doc.text(`${idx + 1}. ${item.name} x ${item.quantity} @ ₹${item.price} = ₹${item.price * item.quantity}`);
+    });
+    doc.moveDown();
+    doc.text(`Subtotal: ₹${order.subtotal}`);
+    doc.text(`Tax: ₹${order.taxAmount}`);
+    doc.text(`Delivery Fee: ₹${order.deliveryFee}`);
+    doc.text(`Total Amount: ₹${order.totalAmount}`, { bold: true });
+    doc.moveDown();
+    doc.text(`Payment Status: ${order.paymentStatus}`);
+    doc.text(`Order Status: ${order.orderStatus}`);
+    doc.end();
+
   } catch (error) {
-    console.error("Download invoice error:", error)
+    console.error("Download invoice error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to download invoice",
-    })
+    });
   }
-})
+});
 
 // Admin: Add Product (Admin can add products without seller ID)
 // Admin: Add Product (Admin can add products without seller ID)
