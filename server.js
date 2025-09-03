@@ -2023,7 +2023,7 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
 app.get("/api/orders", authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query
-    const query = {}
+    const query = { userId: req.user.id }
     if (status) {
       query.orderStatus = status
     }
@@ -2499,6 +2499,10 @@ app.post("/api/admin/orders/:orderId/invoice", authenticateToken, requireAdmin, 
       })
     }
 
+    // Ensure invoices directory exists
+    if (!fs.existsSync(invoicesDir)) {
+      fs.mkdirSync(invoicesDir, { recursive: true });
+    }
     // Generate PDF and save to invoices directory
     const invoicePath = path.join(invoicesDir, `invoice-${orderId}.pdf`);
     const doc = new PDFDocument();
@@ -2546,7 +2550,7 @@ app.get("/api/admin/orders/:orderId/invoice/download", authenticateToken, requir
       return res.status(404).json({
         success: false,
         message: "Order not found",
-      })
+      }) 
     }
 
     // Send the PDF file as a binary response
