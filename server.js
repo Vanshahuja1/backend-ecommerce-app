@@ -2717,7 +2717,7 @@ app.get("/api/admin/users/:userId/orders", authenticateToken, requireAdmin, asyn
 });
 
 // Admin: Add Product (Admin can add products without seller ID)
-/ Create uploads directory if it doesn't exist
+// Create uploads directory if it doesn't exist
 const uploadDir = 'uploads/products';
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -2753,11 +2753,23 @@ const upload = multer({
 // Serve static files for uploaded images
 app.use('/uploads', express.static('uploads'));
 
-// Updated API endpoint with proper image URL handling
-app.post("/api/admin/items", authenticateToken, requireAdmin, upload.single('image'), async (req, res) => {
+// Updated API endpoint to handle both JSON and multipart data
+app.post("/api/admin/items", authenticateToken, requireAdmin, (req, res, next) => {
+  // Check content type to decide how to handle the request
+  const contentType = req.get('Content-Type');
+  
+  if (contentType && contentType.includes('multipart/form-data')) {
+    // Handle file upload
+    upload.single('image')(req, res, next);
+  } else {
+    // Handle JSON data (no file upload)
+    next();
+  }
+}, async (req, res) => {
   try {
     console.log("Request body:", req.body);
     console.log("Uploaded file:", req.file);
+    console.log("Content-Type:", req.get('Content-Type'));
 
     const user = await User.findById(req.user.id);
     if (!user) {
@@ -2767,7 +2779,18 @@ app.post("/api/admin/items", authenticateToken, requireAdmin, upload.single('ima
       });
     }
 
-    const { name, description, price, category, quantity, unit, discount = 0, tax = 0, hasVAT = false } = req.body;
+    const { 
+      name, 
+      description, 
+      price, 
+      category, 
+      quantity, 
+      unit, 
+      imageUrl,  // This will come from JSON requests
+      discount = 0, 
+      tax = 0, 
+      hasVAT = false 
+    } = req.body;
     
     // Validate required fields
     if (!name || !description || !price || !category || !quantity || !unit) {
@@ -2777,22 +2800,28 @@ app.post("/api/admin/items", authenticateToken, requireAdmin, upload.single('ima
       });
     }
 
-    // Generate image URL if file was uploaded
-    let imageUrl = '';
+    // Determine final image URL
+    let finalImageUrl = '';
+    
     if (req.file) {
-      // This creates the full URL that can be used to access the image
-      imageUrl = `${req.protocol}://${req.get('host')}/uploads/products/${req.file.filename}`;
+      // File was uploaded - use the uploaded file URL
+      finalImageUrl = `${req.protocol}://${req.get('host')}/uploads/products/${req.file.filename}`;
+      console.log("Using uploaded file URL:", finalImageUrl);
+    } else if (imageUrl) {
+      // No file uploaded but imageUrl provided in JSON - use the provided URL
+      finalImageUrl = imageUrl;
+      console.log("Using provided imageUrl:", finalImageUrl);
     }
 
-    console.log("Generated image URL:", imageUrl);
+    console.log("Final image URL to save:", finalImageUrl);
 
-    // Create item with the image URL saved in database
+    // Create item with the determined image URL
     const item = new Item({
       name: name.trim(),
       description: description.trim(),
       price: parseFloat(price),
       category: category.trim(),
-      imageUrl: imageUrl, // This saves the full URL in database
+      imageUrl: finalImageUrl, // This will be either uploaded file URL or provided URL
       quantity: parseInt(quantity),
       unit: unit.trim(),
       sellerId: user._id,
@@ -2841,7 +2870,152 @@ app.post("/api/admin/items", authenticateToken, requireAdmin, upload.single('ima
   }
 });
 
-// Also update your get items endpoint to ensure imageUrl is returned
+// Alternative approach: Create separate endpoints for different upload methods
+// This might be cleaner if you want to handle them differently
+
+// Endpoint for JSON requests (predefined images, custom URLs)
+app.post("/api/admin/items/json", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log("JSON Request body:", req.body);
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const { 
+      name, 
+      description, 
+      price, 
+      category, 
+      quantity, 
+      unit, 
+      imageUrl,
+      discount = 0, 
+      tax = 0, 
+      hasVAT = false 
+    } = req.body;
+    
+    // Validate required fields
+    if (!name || !description || !price || !category || !quantity || !unit) {
+      return res.status(400).json({
+        success: false,
+        message: "All required fields must be provided",
+      });
+    }
+
+    console.log("Image URL from request:", imageUrl);
+
+    // Create item
+    const item = new Item({
+      name: name.trim(),
+      description: description.trim(),
+      price: parseFloat(price),
+      category: category.trim(),
+      imageUrl: imageUrl || '', // Use the provided imageUrl
+      quantity: parseInt(quantity),
+      unit: unit.trim(),
+      sellerId: user._id,
+      sellerName: user.name,
+      storeName: user.storeName || user.name,
+      discount: parseFloat(discount),
+      tax: parseFloat(tax),
+      hasVAT: hasVAT === 'true' || hasVAT === true,
+      isAvailable: true,
+    });
+
+    const savedItem = await item.save();
+    console.log("Item saved with imageUrl:", savedItem.imageUrl);
+
+    res.status(201).json({
+      success: true,
+      message: "Product added successfully by admin!",
+      item: savedItem,
+    });
+
+  } catch (error) {
+    console.error("Admin add item error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add product. Please try again.",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Endpoint for file uploads
+app.post("/api/admin/items/upload", authenticateToken, requireAdmin, upload.single('image'), async (req, res) => {
+  try {
+    console.log("Upload Request body:", req.body);
+    console.log("Uploaded file:", req.file);
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const { name, description, price, category, quantity, unit, discount = 0, tax = 0, hasVAT = false } = req.body;
+    
+    // Validate required fields
+    if (!name || !description || !price || !category || !quantity || !unit) {
+      return res.status(400).json({
+        success: false,
+        message: "All required fields must be provided",
+      });
+    }
+
+    // Generate image URL from uploaded file
+    let imageUrl = '';
+    if (req.file) {
+      imageUrl = `${req.protocol}://${req.get('host')}/uploads/products/${req.file.filename}`;
+    }
+
+    console.log("Generated image URL from upload:", imageUrl);
+
+    // Create item
+    const item = new Item({
+      name: name.trim(),
+      description: description.trim(),
+      price: parseFloat(price),
+      category: category.trim(),
+      imageUrl: imageUrl,
+      quantity: parseInt(quantity),
+      unit: unit.trim(),
+      sellerId: user._id,
+      sellerName: user.name,
+      storeName: user.storeName || user.name,
+      discount: parseFloat(discount),
+      tax: parseFloat(tax),
+      hasVAT: hasVAT === 'true' || hasVAT === true,
+      isAvailable: true,
+    });
+
+    const savedItem = await item.save();
+    console.log("Item saved with imageUrl:", savedItem.imageUrl);
+
+    res.status(201).json({
+      success: true,
+      message: "Product added successfully by admin!",
+      item: savedItem,
+    });
+
+  } catch (error) {
+    console.error("Admin add item upload error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add product. Please try again.",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Keep your existing get items endpoint unchanged
 app.get("/api/admin/items", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { page = 1, limit = 100, category, search } = req.query;
@@ -2858,7 +3032,7 @@ app.get("/api/admin/items", authenticateToken, requireAdmin, async (req, res) =>
     }
 
     const items = await Item.find(query)
-      .select('name description price category imageUrl quantity unit sellerId sellerName isAvailable createdAt') // Make sure imageUrl is selected
+      .select('name description price category imageUrl quantity unit sellerId sellerName isAvailable createdAt')
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
