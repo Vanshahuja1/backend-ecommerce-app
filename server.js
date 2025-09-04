@@ -119,7 +119,7 @@ const orderSchema = new mongoose.Schema({
   deliveryFee: { type: Number, required: true },
   taxAmount: { type: Number, required: true },
   totalAmount: { type: Number, required: true },
-  specialRequests: {type: String, default: null, maxLength: 200}
+  specialRequests: {type: String, default: null, maxLength: 200},
   orderStatus: {
     type: String,
     enum: ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"],
