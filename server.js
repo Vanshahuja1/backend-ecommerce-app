@@ -1929,39 +1929,56 @@ app.get("/api/categories", async (req, res) => {
 // Create order
 app.post("/api/orders", authenticateToken, async (req, res) => {
   try {
-    const { items, address, paymentMethod, paymentId, razorpayOrderId, subtotal, deliveryFee, taxAmount, totalAmount } =
-      req.body
+    const { 
+      items, 
+      address, 
+      paymentMethod, 
+      paymentId, 
+      razorpayOrderId, 
+      subtotal, 
+      deliveryFee, 
+      taxAmount, 
+      totalAmount,
+      specialRequests 
+    } = req.body;
+
     // Validate required fields
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
         message: "Order items are required",
-      })
+      });
     }
+
     if (!address || !address.name || !address.phone || !address.address) {
       return res.status(400).json({
         success: false,
         message: "Delivery address is required",
-      })
+      });
     }
+
     if (!paymentMethod || !["cod", "online"].includes(paymentMethod)) {
       return res.status(400).json({
         success: false,
         message: "Valid payment method is required",
-      })
+      });
     }
+
     // Generate unique order ID
-    const orderId = generateOrderId()
+    const orderId = generateOrderId();
+
     // Set payment status based on payment method
-    let paymentStatus = "pending"
+    let paymentStatus = "pending";
     if (paymentMethod === "cod") {
-      paymentStatus = "pending" // COD remains pending until delivery
+      paymentStatus = "pending"; // COD remains pending until delivery
     } else if (paymentMethod === "online" && paymentId) {
-      paymentStatus = "paid"
+      paymentStatus = "paid";
     }
+
     // Calculate estimated delivery (7 days from now)
-    const estimatedDelivery = new Date()
-    estimatedDelivery.setDate(estimatedDelivery.getDate() + 7)
+    const estimatedDelivery = new Date();
+    estimatedDelivery.setDate(estimatedDelivery.getDate() + 7);
+
     const order = new Order({
       userId: req.user.id,
       orderId,
@@ -1975,25 +1992,30 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       deliveryFee,
       taxAmount,
       totalAmount,
+      specialRequests: specialRequests || '', // Added special requests field
       orderStatus: "confirmed",
       estimatedDelivery,
-    })
-    await order.save()
+    });
+
+    await order.save();
+
     // Clear user's cart after successful order
     try {
-      await Cart.deleteOne({ userId: req.user.id })
+      await Cart.deleteOne({ userId: req.user.id });
     } catch (cartError) {
-      console.error("Failed to clear cart after order:", cartError)
+      console.error("Failed to clear cart after order:", cartError);
       // Don't fail the order if cart clearing fails
     }
+
     // Send order confirmation email
     try {
-      const user = await User.findById(req.user.id)
-      await sendOrderConfirmationEmail(user, order)
+      const user = await User.findById(req.user.id);
+      await sendOrderConfirmationEmail(user, order);
     } catch (emailError) {
-      console.error("Failed to send order confirmation email:", emailError)
+      console.error("Failed to send order confirmation email:", emailError);
       // Don't fail the order creation if email fails
     }
+
     res.status(201).json({
       success: true,
       message: "Order placed successfully!",
@@ -2005,48 +2027,52 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
         paymentStatus: order.paymentStatus,
         orderStatus: order.orderStatus,
         estimatedDelivery: order.estimatedDelivery,
+        specialRequests: order.specialRequests, // Include in response
         createdAt: order.createdAt,
       },
-    })
+    });
   } catch (error) {
-    console.error("Create order error:", error)
+    console.error("Create order error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to create order",
-    })
+    });
   }
-})
+});
 
 // Get user orders
 app.get("/api/orders", authenticateToken, async (req, res) => {
   try {
-    const { page = 1, limit = 10, status } = req.query
-    const query = {}
+    const { page = 1, limit = 10, status } = req.query;
+    const query = {}; // Filter by user ID
+    
     if (status) {
-      query.orderStatus = status
+      query.orderStatus = status;
     }
+
     const orders = await Order.find(query)
-      .populate("userId","name email phone")
+      .populate("userId", "name email phone")
       .sort({ createdAt: -1 })
       .limit(limit * 1)
-      .skip((page - 1) * limit)
-    const total = await Order.countDocuments(query)
+      .skip((page - 1) * limit);
+
+    const total = await Order.countDocuments(query);
+
     res.json({
       success: true,
       orders,
       totalPages: Math.ceil(total / limit),
       currentPage: Number.parseInt(page),
       totalOrders: total,
-    })
+    });
   } catch (error) {
-    console.error("Get orders error:", error)
+    console.error("Get orders error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch orders",
-    })
+    });
   }
-})
-
+});
 // Get single order
 app.get("/api/orders/:orderId", authenticateToken, async (req, res) => {
   try {
