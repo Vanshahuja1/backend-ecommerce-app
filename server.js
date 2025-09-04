@@ -2026,6 +2026,7 @@ app.get("/api/orders", authenticateToken, async (req, res) => {
       query.orderStatus = status
     }
     const orders = await Order.find(query)
+      .populate("userId","name email phone")
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit)
