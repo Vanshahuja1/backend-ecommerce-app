@@ -2717,14 +2717,22 @@ app.get("/api/admin/users/:userId/orders", authenticateToken, requireAdmin, asyn
 });
 
 // Admin: Add Product (Admin can add products without seller ID)
-// Admin: Add Product (Admin can add products without seller ID)
+/ Create uploads directory if it doesn't exist
+const uploadDir = 'uploads/products';
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/products/') // Make sure this directory exists
+    cb(null, uploadDir)
   },
   filename: function (req, file, cb) {
+    // Create unique filename
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-    cb(null, 'product-' + uniqueSuffix + path.extname(file.originalname))
+    const fileName = 'product-' + uniqueSuffix + path.extname(file.originalname)
+    cb(null, fileName)
   }
 });
 
@@ -2742,72 +2750,137 @@ const upload = multer({
   }
 });
 
-// Updated API endpoint with file upload support
+// Serve static files for uploaded images
+app.use('/uploads', express.static('uploads'));
+
+// Updated API endpoint with proper image URL handling
 app.post("/api/admin/items", authenticateToken, requireAdmin, upload.single('image'), async (req, res) => {
   try {
-    const user = await User.findById(req.user.id)
-    const { name, description, price, category, quantity, unit, discount = 0, tax = 0, hasVAT = false } = req.body    
+    console.log("Request body:", req.body);
+    console.log("Uploaded file:", req.file);
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const { name, description, price, category, quantity, unit, discount = 0, tax = 0, hasVAT = false } = req.body;
     
     // Validate required fields
     if (!name || !description || !price || !category || !quantity || !unit) {
       return res.status(400).json({
         success: false,
         message: "All required fields must be provided",
-      })
+      });
     }
 
-    // Handle image upload
+    // Generate image URL if file was uploaded
     let imageUrl = '';
     if (req.file) {
-      // Construct the image URL - adjust the base URL to match your server setup
+      // This creates the full URL that can be used to access the image
       imageUrl = `${req.protocol}://${req.get('host')}/uploads/products/${req.file.filename}`;
     }
 
-    // Create item with admin as the seller
+    console.log("Generated image URL:", imageUrl);
+
+    // Create item with the image URL saved in database
     const item = new Item({
-      name,
-      description,
-      price: parseFloat(price), // Ensure it's a number
-      category,
-      imageUrl,
-      quantity: parseInt(quantity), // Ensure it's a number
-      unit,
+      name: name.trim(),
+      description: description.trim(),
+      price: parseFloat(price),
+      category: category.trim(),
+      imageUrl: imageUrl, // This saves the full URL in database
+      quantity: parseInt(quantity),
+      unit: unit.trim(),
       sellerId: user._id,
       sellerName: user.name,
       storeName: user.storeName || user.name,
       discount: parseFloat(discount),
       tax: parseFloat(tax),
       hasVAT: hasVAT === 'true' || hasVAT === true,
-    })
+      isAvailable: true,
+    });
 
-    await item.save()
+    const savedItem = await item.save();
+    console.log("Item saved with imageUrl:", savedItem.imageUrl);
 
     res.status(201).json({
       success: true,
       message: "Product added successfully by admin!",
-      item,
-    })
+      item: savedItem,
+    });
+
   } catch (error) {
-    console.error("Admin add item error:", error)
+    console.error("Admin add item error:", error);
+    console.error("Error stack:", error.stack);
     
     // More specific error handling
     if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(e => e.message).join(', ');
       return res.status(400).json({
         success: false,
-        message: "Validation error: " + Object.values(error.errors).map(e => e.message).join(', '),
-      })
+        message: `Validation error: ${validationErrors}`,
+      });
+    }
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "Product with this name already exists",
+      });
     }
 
     res.status(500).json({
       success: false,
       message: "Failed to add product. Please try again.",
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    })
+    });
   }
-})
-// Don't forget to serve static files for uploaded images
-app.use('/uploads', express.static('uploads'));
+});
 
+// Also update your get items endpoint to ensure imageUrl is returned
+app.get("/api/admin/items", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 100, category, search } = req.query;
+    
+    let query = {};
+    if (category && category !== 'all') {
+      query.category = category;
+    }
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const items = await Item.find(query)
+      .select('name description price category imageUrl quantity unit sellerId sellerName isAvailable createdAt') // Make sure imageUrl is selected
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Item.countDocuments(query);
+
+    res.json({
+      success: true,
+      items,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      total
+    });
+
+  } catch (error) {
+    console.error("Get items error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch items"
+    });
+  }
+});
 // Admin: Update Product
 app.put("/api/admin/items/:id", authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -2874,52 +2947,7 @@ app.delete("/api/admin/items/:id", authenticateToken, requireAdmin, async (req, 
 })
 
 // Admin: Get All Products (including hidden ones)
-app.get("/api/admin/items", authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { category, search, page = 1, limit = 1000, status } = req.query
-    
-    const query = {}
-    
-    // Filter by availability status
-    if (status && status !== "all") {
-      query.isAvailable = status === "available"
-    }
-    
-    if (category) {
-      query.category = { $regex: category, $options: "i" }
-    }
-    
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-        { category: { $regex: search, $options: "i" } },
-        { sellerName: { $regex: search, $options: "i" } },
-      ]
-    }
 
-    const items = await Item.find(query)
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-
-    const total = await Item.countDocuments(query)
-
-    res.json({
-      success: true,
-      items,
-      totalPages: Math.ceil(total / limit),
-      currentPage: Number.parseInt(page),
-      totalItems: total,
-    })
-  } catch (error) {
-    console.error("Admin get items error:", error)
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch products",
-    })
-  }
-})
 // Fetch admin products with discount > 0 (public, no auth required)
 app.get("/api/admin-products/with-discount", async (req, res) => {
   try {
