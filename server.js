@@ -11,6 +11,8 @@ const fetch = require("node-fetch")
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
+
 
 require("dotenv").config()
 const app = express()
@@ -2716,10 +2718,35 @@ app.get("/api/admin/users/:userId/orders", authenticateToken, requireAdmin, asyn
 
 // Admin: Add Product (Admin can add products without seller ID)
 // Admin: Add Product (Admin can add products without seller ID)
-app.post("/api/admin/items", authenticateToken, requireAdmin, async (req, res) => {
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/products/') // Make sure this directory exists
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+    cb(null, 'product-' + uniqueSuffix + path.extname(file.originalname))
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed!'), false);
+    }
+  }
+});
+
+// Updated API endpoint with file upload support
+app.post("/api/admin/items", authenticateToken, requireAdmin, upload.single('image'), async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
-    const { name, description, price, category, imageUrl, quantity, unit, discount = 0, tax = 0, hasVAT = false } = req.body    
+    const { name, description, price, category, quantity, unit, discount = 0, tax = 0, hasVAT = false } = req.body    
     
     // Validate required fields
     if (!name || !description || !price || !category || !quantity || !unit) {
@@ -2729,21 +2756,28 @@ app.post("/api/admin/items", authenticateToken, requireAdmin, async (req, res) =
       })
     }
 
-    // Create item with admin as the seller - use actual admin name
+    // Handle image upload
+    let imageUrl = '';
+    if (req.file) {
+      // Construct the image URL - adjust the base URL to match your server setup
+      imageUrl = `${req.protocol}://${req.get('host')}/uploads/products/${req.file.filename}`;
+    }
+
+    // Create item with admin as the seller
     const item = new Item({
       name,
       description,
-      price,
+      price: parseFloat(price), // Ensure it's a number
       category,
       imageUrl,
-      quantity,
+      quantity: parseInt(quantity), // Ensure it's a number
       unit,
       sellerId: user._id,
-      sellerName: user.name, // This will be "admin" - matching your database
+      sellerName: user.name,
       storeName: user.storeName || user.name,
-      discount,
-      tax,
-      hasVAT,
+      discount: parseFloat(discount),
+      tax: parseFloat(tax),
+      hasVAT: hasVAT === 'true' || hasVAT === true,
     })
 
     await item.save()
@@ -2755,12 +2789,24 @@ app.post("/api/admin/items", authenticateToken, requireAdmin, async (req, res) =
     })
   } catch (error) {
     console.error("Admin add item error:", error)
+    
+    // More specific error handling
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: "Validation error: " + Object.values(error.errors).map(e => e.message).join(', '),
+      })
+    }
+
     res.status(500).json({
       success: false,
       message: "Failed to add product. Please try again.",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     })
   }
 })
+// Don't forget to serve static files for uploaded images
+app.use('/uploads', express.static('uploads'));
 
 // Admin: Update Product
 app.put("/api/admin/items/:id", authenticateToken, requireAdmin, async (req, res) => {
