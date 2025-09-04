@@ -1,7 +1,4 @@
 const express = require("express")
-const PDFDocument = require('pdfkit');
-const fs = require('fs');
-const path = require('path');
 const mongoose = require("mongoose")
 const cors = require("cors")
 const bcrypt = require("bcryptjs")
@@ -11,10 +8,16 @@ const crypto = require("crypto")
 const Razorpay = require("razorpay")
 const { OAuth2Client } = require("google-auth-library")
 const fetch = require("node-fetch") 
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
 
 require("dotenv").config()
 const app = express()
-
+const invoicesDir = path.join(__dirname, 'invoices');
+if (!fs.existsSync(invoicesDir)) {
+  fs.mkdirSync(invoicesDir, { recursive: true });
+}
 // Middleware
 app.use(cors())
 app.use(express.json())
@@ -40,11 +43,6 @@ mongoose.connect(
 )
 
 mongoose.connection.on("connected", () => {
-// Ensure invoices directory exists
-const invoicesDir = path.join(__dirname, 'invoices');
-if (!fs.existsSync(invoicesDir)) {
-  fs.mkdirSync(invoicesDir);
-}
   console.log("MongoDB connected successfully")
 })
 
@@ -2486,89 +2484,208 @@ app.patch("/api/admin/items/:itemId/status", authenticateToken, requireAdmin, as
   }
 })
 
-app.post("/api/admin/orders/:orderId/invoice", authenticateToken, requireAdmin, async (req, res) => {
+app.get("/api/admin/orders/:orderId/invoice/download", authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { orderId } = req.params
+    const { orderId } = req.params;
 
-    const order = await Order.findOne({ orderId }).populate("userId", "name email phone")
+    const order = await Order.findOne({ orderId }).populate("userId", "name email phone");
 
     if (!order) {
       return res.status(404).json({
         success: false,
         message: "Order not found",
-      })
+      });
     }
 
-    // Ensure invoices directory exists
-    if (!fs.existsSync(invoicesDir)) {
-      fs.mkdirSync(invoicesDir, { recursive: true });
-    }
-    // Generate PDF and save to invoices directory
-    const invoicePath = path.join(invoicesDir, `invoice-${orderId}.pdf`);
-    const doc = new PDFDocument();
-    const stream = fs.createWriteStream(invoicePath);
-    doc.pipe(stream);
-    doc.fontSize(20).text('Invoice', { align: 'center' });
-    doc.moveDown();
-    doc.fontSize(14).text(`Order ID: ${orderId}`);
-    doc.text(`Customer: ${order.userId.name} (${order.userId.email})`);
-    doc.text(`Total: ${order.totalAmount}`);
-    doc.text(`Date: ${order.createdAt}`);
-    doc.moveDown();
-    doc.text('Items:', { underline: true });
-    order.items.forEach((item, idx) => {
-      doc.text(`${idx + 1}. ${item.name} x${item.quantity} - ${item.price}`);
-    });
-    doc.end();
-    stream.on('finish', () => {
-      res.json({
-        success: true,
-        message: "Invoice generated successfully",
-        invoiceUrl: `/api/admin/orders/${orderId}/invoice/download`
-      });
-    });
-    stream.on('error', (err) => {
-      console.error("PDF write error:", err);
-      res.status(500).json({ success: false, message: "Failed to generate invoice PDF" });
-    });
+    // Generate PDF
+    const pdfBuffer = await generateInvoicePDF(order);
+    
+    // Set headers for PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="invoice_${orderId}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    // Send PDF buffer
+    res.send(pdfBuffer);
+
   } catch (error) {
-    console.error("Generate invoice error:", error)
+    console.error("Download invoice error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to generate invoice",
-    })
+    });
   }
-})
+});
 
-app.get("/api/admin/orders/:orderId/invoice/download", authenticateToken, requireAdmin, async (req, res) => {
+// Get Invoice Data (for mobile app PDF generation)
+app.get("/api/admin/orders/:orderId/invoice/data", authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { orderId } = req.params
+    const { orderId } = req.params;
 
-    const order = await Order.findOne({ orderId }).populate("userId", "name email phone")
+    const order = await Order.findOne({ orderId }).populate("userId", "name email phone");
 
     if (!order) {
       return res.status(404).json({
         success: false,
         message: "Order not found",
-      }) 
+      });
     }
 
-    // Send the PDF file as a binary response
-    const invoicePath = path.join(invoicesDir, `invoice-${orderId}.pdf`);
-    if (!fs.existsSync(invoicePath)) {
-      return res.status(404).json({ success: false, message: "Invoice PDF not found" });
-    }
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=invoice-${orderId}.pdf`);
-    fs.createReadStream(invoicePath).pipe(res);
+    // Return structured invoice data
+    const invoiceData = {
+      // Company Details
+      company: {
+        name: "Your Company Name",
+        address: "123 Business Street",
+        city: "Business City, State 12345",
+        phone: "+1 (555) 123-4567",
+        email: "info@yourcompany.com",
+        website: "www.yourcompany.com"
+      },
+      
+      // Invoice Details
+      invoice: {
+        number: orderId,
+        date: order.createdAt,
+        dueDate: order.estimatedDelivery,
+      },
+      
+      // Customer Details
+      customer: {
+        name: order.userId.name,
+        email: order.userId.email,
+        phone: order.userId.phone,
+        address: {
+          name: order.address.name,
+          phone: order.address.phone,
+          address: order.address.address,
+          city: order.address.city,
+          state: order.address.state,
+          pincode: order.address.pincode,
+        }
+      },
+      
+      // Order Details
+      order: {
+        id: order._id,
+        orderId: order.orderId,
+        items: order.items,
+        subtotal: order.subtotal,
+        deliveryFee: order.deliveryFee,
+        taxAmount: order.taxAmount,
+        totalAmount: order.totalAmount,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        orderStatus: order.orderStatus,
+        createdAt: order.createdAt,
+        estimatedDelivery: order.estimatedDelivery,
+      }
+    };
+
+    res.json({
+      success: true,
+      invoiceData,
+    });
+
   } catch (error) {
-    console.error("Download invoice error:", error)
+    console.error("Get invoice data error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to download invoice",
-    })
+      message: "Failed to fetch invoice data",
+    });
   }
-})
+});
+app.get("/api/admin/users/:userId", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId).select("-password");
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Get user's order statistics
+    const totalOrders = await Order.countDocuments({ userId });
+    const completedOrders = await Order.countDocuments({ 
+      userId, 
+      orderStatus: "delivered" 
+    });
+    
+    const totalSpentResult = await Order.aggregate([
+      { $match: { userId: mongoose.Types.ObjectId(userId) } },
+      { $group: { _id: null, total: { $sum: "$totalAmount" } } }
+    ]);
+    
+    const totalSpent = totalSpentResult.length > 0 ? totalSpentResult[0].total : 0;
+
+    const userDetails = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      userType: user.userType,
+      isActive: user.isActive,
+      isVerified: user.isVerified,
+      createdAt: user.createdAt,
+      totalOrders,
+      completedOrders,
+      totalSpent,
+    };
+
+    res.json({
+      success: true,
+      user: userDetails,
+    });
+
+  } catch (error) {
+    console.error("Get user details error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch user details",
+    });
+  }
+});
+
+// Get User Order History (for View Customer feature)
+app.get("/api/admin/users/:userId/orders", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const orders = await Order.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const totalOrders = await Order.countDocuments({ userId });
+
+    res.json({
+      success: true,
+      orders,
+      totalPages: Math.ceil(totalOrders / limit),
+      currentPage: parseInt(page),
+      totalOrders,
+    });
+
+  } catch (error) {
+    console.error("Get user orders error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch user orders",
+    });
+  }
+});
 
 // Admin: Add Product (Admin can add products without seller ID)
 // Admin: Add Product (Admin can add products without seller ID)
@@ -2752,6 +2869,113 @@ app.get("/api/admin-products/with-discount", async (req, res) => {
     });
   }
 });
+async function generateInvoicePDF(order) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 50 });
+    const buffers = [];
+
+    doc.on('data', buffers.push.bind(buffers));
+    doc.on('end', () => {
+      const pdfBuffer = Buffer.concat(buffers);
+      resolve(pdfBuffer);
+    });
+    doc.on('error', reject);
+
+    try {
+      // Header
+      doc.fillColor('#2563eb')
+         .fontSize(28)
+         .text('INVOICE', 50, 50);
+
+      // Company Info
+      doc.fillColor('#000000')
+         .fontSize(12)
+         .text('Your Company Name', 400, 50)
+         .text('123 Business Street', 400, 65)
+         .text('Business City, State 12345', 400, 80)
+         .text('Phone: +1 (555) 123-4567', 400, 95)
+         .text('Email: info@yourcompany.com', 400, 110);
+
+      // Invoice Details
+      doc.fontSize(10)
+         .fillColor('#666666')
+         .text(`Invoice #: ${order.orderId}`, 50, 150)
+         .text(`Date: ${new Date(order.createdAt).toLocaleDateString()}`, 50, 165)
+         .text(`Due Date: ${new Date(order.estimatedDelivery).toLocaleDateString()}`, 50, 180)
+         .text(`Payment Status: ${order.paymentStatus.toUpperCase()}`, 50, 195);
+
+      // Customer Info
+      doc.fontSize(12)
+         .fillColor('#000000')
+         .text('Bill To:', 50, 230)
+         .fontSize(10)
+         .text(order.address.name, 50, 250)
+         .text(order.address.phone, 50, 265)
+         .text(order.address.address, 50, 280)
+         .text(`${order.address.city}, ${order.address.state} ${order.address.pincode}`, 50, 295);
+
+      // Table Header
+      const tableTop = 350;
+      doc.fontSize(10)
+         .fillColor('#000000');
+
+      // Draw table header background
+      doc.rect(50, tableTop, 500, 25)
+         .fillColor('#f3f4f6')
+         .fill();
+
+      // Table headers
+      doc.fillColor('#000000')
+         .text('Item', 60, tableTop + 8)
+         .text('Qty', 300, tableTop + 8)
+         .text('Price', 350, tableTop + 8)
+         .text('Amount', 450, tableTop + 8);
+
+      // Table Items
+      let yPosition = tableTop + 35;
+      order.items.forEach((item, index) => {
+        const amount = item.price * item.quantity;
+        
+        doc.text(item.name, 60, yPosition)
+           .text(item.quantity.toString(), 300, yPosition)
+           .text(`$${item.price.toFixed(2)}`, 350, yPosition)
+           .text(`$${amount.toFixed(2)}`, 450, yPosition);
+        
+        yPosition += 20;
+      });
+
+      // Totals
+      yPosition += 20;
+      doc.text('Subtotal:', 400, yPosition)
+         .text(`$${order.subtotal.toFixed(2)}`, 450, yPosition);
+
+      yPosition += 15;
+      doc.text('Delivery Fee:', 400, yPosition)
+         .text(`$${order.deliveryFee.toFixed(2)}`, 450, yPosition);
+
+      yPosition += 15;
+      doc.text('Tax:', 400, yPosition)
+         .text(`$${order.taxAmount.toFixed(2)}`, 450, yPosition);
+
+      yPosition += 20;
+      doc.fontSize(12)
+         .fillColor('#2563eb')
+         .text('Total:', 400, yPosition)
+         .text(`$${order.totalAmount.toFixed(2)}`, 450, yPosition);
+
+      // Footer
+      doc.fontSize(8)
+         .fillColor('#666666')
+         .text('Thank you for your business!', 50, yPosition + 60)
+         .text('For any questions regarding this invoice, please contact us.', 50, yPosition + 75);
+
+      doc.end();
+
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, "0.0.0.0", () => {
