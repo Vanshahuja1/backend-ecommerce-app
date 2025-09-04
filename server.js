@@ -2021,7 +2021,7 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
 app.get("/api/orders", authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query
-    const query = { userId: req.user.id }
+    const query = {}
     if (status) {
       query.orderStatus = status
     }
