@@ -292,7 +292,7 @@ async function sendSignupMail({ name, email, phone }) {
 
 // Send order confirmation email
 async function sendOrderConfirmationEmail(user, order) {
-  const itemsList = order.items.map((item) => `<li>${item.name} - Qty: ${item.quantity} - ₹${item.price}</li>`).join("")
+  const itemsList = order.items.map((item) => `<li>${item.name} - Qty: ${item.quantity} - BHD${item.price}</li>`).join("")
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: user.email,
@@ -305,7 +305,7 @@ async function sendOrderConfirmationEmail(user, order) {
                 <div style="background-color: #f5f5f5; padding: 15px; margin: 20px 0; border-radius: 5px;">
           <h3>Order Details</h3>
           <p><strong>Order ID:</strong> ${order.orderId}</p>
-          <p><strong>Total Amount:</strong> ₹${order.totalAmount}</p>
+          <p><strong>Total Amount:</strong> BHD${order.totalAmount}</p>
           <p><strong>Payment Method:</strong> ${order.paymentMethod === "cod" ? "Cash on Delivery" : "Online Payment"}</p>
           <p><strong>Payment Status:</strong> ${order.paymentStatus}</p>
           <p><strong>Estimated Delivery:</strong> ${order.estimatedDelivery.toDateString()}</p>
